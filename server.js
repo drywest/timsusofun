@@ -93,7 +93,7 @@ class ChatManager {
     } catch {
       if (!this.waitingShown) {
         this.waitingShown = true;
-        this.broadcast({ type: "status", text: "Waiting for stream…" });
+        // Suppress all system/status messages while waiting.
       }
     } finally {
       this.timer = setTimeout(() => this.loop(), 800); // <- your polling frequency (unchanged)
@@ -144,16 +144,10 @@ class ChatManager {
 
     chat.on("start", () => {
       this.waitingShown = false;
-      this.broadcast({
-        type: "status",
-        text: `Connected to live chat (${this.videoId || "video"})`,
-      });
+      // Suppress "Connected to live chat" system message.
     });
     chat.on("end", () => {
-      this.broadcast({
-        type: "status",
-        text: "Stream ended. Waiting for next live…",
-      });
+      // Suppress "Stream ended..." system message; return to silent waiting.
       this.waitingShown = true;
       try {
         chat.stop();
@@ -161,10 +155,7 @@ class ChatManager {
       this.livechat = null;
     });
     chat.on("error", (e) => {
-      this.broadcast({
-        type: "status",
-        text: `Chat error: ${String(e?.message || e)}`,
-      });
+      // Suppress "Chat error..." system message; return to silent waiting.
       this.waitingShown = true;
       try {
         chat.stop();
@@ -466,7 +457,7 @@ wss.on("connection", async (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const channelId = url.searchParams.get("channelId");
   if (!channelId) {
-    ws.send(JSON.stringify({ type: "status", text: "Missing channelId" }));
+    // Suppress "Missing channelId" system message; close silently.
     ws.close();
     return;
   }
@@ -479,7 +470,7 @@ wss.on("connection", async (ws, req) => {
     mgr.start().catch(() => {});
   }
   mgr.addClient(ws);
-  ws.send(JSON.stringify({ type: "status", text: "Connecting…" }));
+  // Suppress "Connecting…" system message.
 });
 
 httpServer.listen(PORT, () =>
