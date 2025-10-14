@@ -1,4 +1,4 @@
-// public/overlay.js
+// public/overlay.js 
 (function () {
   const stack = document.getElementById("stack");
 
@@ -187,6 +187,10 @@
   }
 
   function makeBadgeImg(src, alt) {
+    // allow {url:"..."}, {icon:"..."}, or plain string
+    const url =
+      typeof src === "string" ? src : (src && (src.url || src.icon)) || "";
+
     const img = document.createElement("img");
     img.alt = alt || "badge";
     img.style.height = "1em";
@@ -197,7 +201,7 @@
     img.loading = "eager";
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
-    img.src = src;
+    img.src = url;
     return img;
   }
 
@@ -266,6 +270,13 @@
           frag.appendChild(document.createTextNode(text.slice(last, offset)));
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
+        // Make native emoji visually match 1em text like image emojis
+        span.style.fontSize = "1em";
+        span.style.lineHeight = "1em";
+        span.style.height = "1em";
+        span.style.display = "inline-block";
+        span.style.verticalAlign = "-0.15em";
+        span.style.whiteSpace = "pre";
         span.textContent = m;
         frag.appendChild(span);
         last = offset + m.length;
