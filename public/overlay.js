@@ -24,20 +24,9 @@
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
-    "#FF4D4D",
-    "#FF8A4D",
-    "#FFCA3A",
-    "#8AC926",
-    "#52D1DC",
-    "#4D96FF",
-    "#B04DFF",
-    "#FF4DB7",
-    "#32D583",
-    "#F97066",
-    "#12B0E8",
-    "#7A5AF8",
-    "#EE46BC",
-    "#16BDCA",
+    "#FF4D4D","#FF8A4D","#FFCA3A","#8AC926","#52D1DC",
+    "#4D96FF","#B04DFF","#FF4DB7","#32D583","#F97066",
+    "#12B0E8","#7A5AF8","#EE46BC","#16BDCA",
   ];
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
@@ -50,9 +39,7 @@
   }
 
   function isBot(name) {
-    const n = String(name || "")
-      .toLowerCase()
-      .replace(/\s+/g, "");
+    const n = String(name || "").toLowerCase().replace(/\s+/g, "");
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
 
@@ -122,13 +109,11 @@
 
     stack.appendChild(fragment);
 
-    // j-chat style push-up (no timing changes to fetching/speed)
+    // j-chat style push-up
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
-    newLines.forEach((el) => {
-      pushBy += el.offsetHeight + gap;
-    });
+    newLines.forEach((el) => { pushBy += el.offsetHeight + gap; });
 
     stack.style.transition = "none";
     stack.style.transform = `translateY(${pushBy}px)`;
@@ -170,16 +155,14 @@
       a.appendChild(makeBadgeImg(memberBadges[0], "member"));
     }
 
-    a.appendChild(
-      document.createTextNode(`${(author || "User").toUpperCase()}:`),
-    );
+    a.appendChild(document.createTextNode(`${(author || "User").toUpperCase()}:`));
 
     const m = document.createElement("span");
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
     normalizeEmojiImages(m); // YouTube emoji <img>
-    normalizeUnicodeEmoji(m); // Native emoji → wrap + scale
+    normalizeUnicodeEmoji(m); // Native emoji → wrap + size/align
 
     line.appendChild(a);
     line.appendChild(m);
@@ -229,28 +212,26 @@
     });
   }
 
-  // Wrap native Unicode emoji so they visually match text height
+  // Wrap native Unicode emoji so they match message text size & baseline
   function normalizeUnicodeEmoji(container) {
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      null,
-    );
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
-    // compute message font-size in px; fallback to 36
-    const px = parseFloat(getComputedStyle(container).fontSize) || 36;
-    const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--emoji-scale")) || 1.4;
-    const targetPx = px * scale; // desired emoji visual size
+    // read desired scale from CSS (fallback 1.4)
+    const root = getComputedStyle(document.documentElement);
+    const scale = parseFloat(root.getPropertyValue("--emoji-scale")) || 1.4;
+
+    // compute current message font size in px for precise sizing
+    const msgPx = parseFloat(getComputedStyle(container).fontSize) || 36;
+    const emojiPx = msgPx * scale;
 
     nodes.forEach((node) => {
       const text = node.nodeValue;
       if (!text) return;
 
-      const quick =
-        /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
+      const quick = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
       if (!quick.test(text)) return;
 
       let emojiSeq;
@@ -267,43 +248,40 @@
       const frag = document.createDocumentFragment();
       let last = 0;
       text.replace(emojiSeq, (m, offset) => {
-        if (offset > last)
-          frag.appendChild(document.createTextNode(text.slice(last, offset)));
+        if (offset > last) frag.appendChild(document.createTextNode(text.slice(last, offset)));
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
         span.textContent = m;
 
-        // Size + baseline centering in px (avoids platform differences)
+        // Pixel-precise sizing & baseline alignment (works across fonts/platforms)
         span.style.display = "inline-block";
-        span.style.fontSize = `${targetPx}px`;
-        span.style.lineHeight = `${px}px`; // match surrounding line box
-        span.style.height = `${px}px`;
-        span.style.verticalAlign = "-0.12em"; // visually centers with image emojis
-        span.style.fontWeight = "400";
+        span.style.fontSize = `${emojiPx}px`;   // visual size
+        span.style.lineHeight = `${msgPx}px`;   // keep line box consistent
+        span.style.height = `${msgPx}px`;       // helps centering
+        span.style.verticalAlign = "-0.14em";   // align with <img> emoji baseline
+        span.style.fontWeight = "400";          // avoid bold inflation
         span.style.fontFamily = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"';
+        span.style.whiteSpace = "pre";
 
         frag.appendChild(span);
         last = offset + m.length;
         return m;
       });
       if (last === 0) return;
-      if (last < text.length)
-        frag.appendChild(document.createTextNode(text.slice(last)));
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
       node.parentNode.replaceChild(frag, node);
     });
   }
 
   function escapeHtml(s) {
-    return String(s).replace(
-      /[&<>"']/g,
-      (m) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[m],
+    return String(s).replace(/[&<>"']/g, (m) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[m],
     );
   }
 })();
