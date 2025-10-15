@@ -10,12 +10,11 @@
 
       :root{
         --line-gap:10px;
-        /* Smaller default so more messages fit (light reduction only) */
-        --font-size:36px; /* was 42px */
+        --font-size:42px;        /* URL param ?fs= overrides this */
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
-        --emoji-scale:1.38;       /* native emoji visual size vs text */
+        --emoji-scale:1.4;        /* native emoji scale vs surrounding text */
         --max-keep:400;
       }
 
@@ -46,19 +45,11 @@
       .author{ font-weight:900; margin-right:.25em; }
       .message{ font-weight:900; color:#fff !important; }
 
-      /* YouTube emoji <img> */
-      .emoji{ height:1em; vertical-align:-0.12em; display:inline-block; }
+      /* YouTube custom emoji <img> normalization (these were already fine) */
+      .emoji{ height:1em; vertical-align:-0.15em; display:inline-block; }
 
-      /* Native (Unicode) emoji wrapped by JS → match image emoji size & baseline */
-      .emoji-char{
-        display:inline-block;
-        font-size: calc(1em * var(--emoji-scale)); /* scale reliably across platforms */
-        line-height: 1em;       /* keep box height consistent with text */
-        height: 1em;            /* helps vertical centering visually */
-        vertical-align: -0.12em;/* align with image emoji baseline */
-        font-weight: 400;       /* avoid bold inflation on system emoji */
-        font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
-      }
+      /* Keep this minimal—JS sets the precise sizing/align on native emoji */
+      .emoji-char{ display:inline-block; }
     </style>
   </head>
   <body>
