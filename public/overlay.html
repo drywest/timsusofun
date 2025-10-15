@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       html, body { margin:0; padding:0; height:100%; background:transparent; }
-      * { font-family: "Noto Sans","Apple Color Emoji","Noto Sans Emoji","Noto Color Emoji",Tahoma,Geneva,Verdana,sans-serif !important; }
+      * { font-family: "Segoe UI","Apple Color Emoji","Segoe UI Emoji","Segoe UI Color Emoji",Tahoma,Geneva,Verdana,sans-serif !important; }
 
       :root{
         --line-gap:10px;
@@ -14,8 +14,7 @@
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
-        /* FIX: use a proper scale factor (not 142×) so native emojis are big and well-aligned */
-        --emoji-scale:1.42;       /* ~142% */
+        --emoji-scale:142;        /* <— tweak if you want them bigger/smaller */
         --max-keep:400;
       }
 
@@ -49,7 +48,7 @@
       /* YouTube emoji <img> */
       .emoji{ height:1em; vertical-align:-0.15em; display:inline-block; }
 
-      /* Native (Unicode) emoji wrapped by JS → visually matches image emoji */
+      /* Native (Unicode) emoji wrapped by JS → perfectly matches visual height */
       .emoji-char{
         display:inline-block;
         width:1em;               /* reserve layout width */
@@ -58,11 +57,10 @@
         font-size:1em;           /* base before scaling */
         font-weight:400;         /* avoid bold inflation */
         font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
-        /* FIX: better baseline on iOS/Android + correct scale */
-        transform: translateY(0.02em) scale(var(--emoji-scale));
+        transform: translateY(0.06em) scale(var(--emoji-scale));
         transform-origin: left bottom;
-        vertical-align:-0.12em;
-        /* keep following text from overlapping the scaled glyph */
+        vertical-align:-0.25em;
+        /* prevent overlap with following text when scaled wider than 1em */
         margin-right: calc((var(--emoji-scale) - 1) * 1em);
       }
     </style>
