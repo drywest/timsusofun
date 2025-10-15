@@ -240,6 +240,10 @@
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
+    // Read --emoji-scale from CSS (fallback to 1.4 if not set)
+    const rootStyles = getComputedStyle(document.documentElement);
+    const scaleVar = parseFloat(rootStyles.getPropertyValue("--emoji-scale")) || 1.4;
+
     nodes.forEach((node) => {
       const text = node.nodeValue;
       if (!text) return;
@@ -267,6 +271,17 @@
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
         span.textContent = m;
+
+        // >>> Minimal inline styles to fix size & baseline <<<
+        span.style.display = "inline-block";
+        span.style.fontSize = `${scaleVar}em`;  // scale relative to surrounding text
+        span.style.lineHeight = "1em";
+        span.style.height = "1em";
+        span.style.verticalAlign = "-0.12em";   // align with image emoji baseline
+        span.style.fontWeight = "400";          // avoid bold inflation
+        span.style.fontFamily = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"';
+        // <<< end fixes >>>
+
         frag.appendChild(span);
         last = offset + m.length;
         return m;
