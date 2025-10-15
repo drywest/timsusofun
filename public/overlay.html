@@ -10,11 +10,12 @@
 
       :root{
         --line-gap:10px;
-        --font-size:42px;        /* URL param ?fs= overrides this */
+        --font-size:42px;
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
-        --emoji-scale:1.4;        /* native emoji scale vs surrounding text */
+        /* FIX: use a proper scale factor (not 142×) so native emojis are big and well-aligned */
+        --emoji-scale:1.42;       /* ~142% */
         --max-keep:400;
       }
 
@@ -45,11 +46,25 @@
       .author{ font-weight:900; margin-right:.25em; }
       .message{ font-weight:900; color:#fff !important; }
 
-      /* YouTube custom emoji <img> normalization (these were already fine) */
+      /* YouTube emoji <img> */
       .emoji{ height:1em; vertical-align:-0.15em; display:inline-block; }
 
-      /* Keep this minimal—JS sets the precise sizing/align on native emoji */
-      .emoji-char{ display:inline-block; }
+      /* Native (Unicode) emoji wrapped by JS → visually matches image emoji */
+      .emoji-char{
+        display:inline-block;
+        width:1em;               /* reserve layout width */
+        height:1em;              /* baseline height reference */
+        line-height:1;
+        font-size:1em;           /* base before scaling */
+        font-weight:400;         /* avoid bold inflation */
+        font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
+        /* FIX: better baseline on iOS/Android + correct scale */
+        transform: translateY(0.02em) scale(var(--emoji-scale));
+        transform-origin: left bottom;
+        vertical-align:-0.12em;
+        /* keep following text from overlapping the scaled glyph */
+        margin-right: calc((var(--emoji-scale) - 1) * 1em);
+      }
     </style>
   </head>
   <body>
