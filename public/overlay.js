@@ -240,9 +240,10 @@
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
-    // Read --emoji-scale from CSS (fallback to 1.4 if not set)
-    const rootStyles = getComputedStyle(document.documentElement);
-    const scaleVar = parseFloat(rootStyles.getPropertyValue("--emoji-scale")) || 1.4;
+    // compute message font-size in px; fallback to 36
+    const px = parseFloat(getComputedStyle(container).fontSize) || 36;
+    const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--emoji-scale")) || 1.4;
+    const targetPx = px * scale; // desired emoji visual size
 
     nodes.forEach((node) => {
       const text = node.nodeValue;
@@ -272,15 +273,14 @@
         span.className = "emoji emoji-char";
         span.textContent = m;
 
-        // >>> Minimal inline styles to fix size & baseline <<<
+        // Size + baseline centering in px (avoids platform differences)
         span.style.display = "inline-block";
-        span.style.fontSize = `${scaleVar}em`;  // scale relative to surrounding text
-        span.style.lineHeight = "1em";
-        span.style.height = "1em";
-        span.style.verticalAlign = "-0.12em";   // align with image emoji baseline
-        span.style.fontWeight = "400";          // avoid bold inflation
+        span.style.fontSize = `${targetPx}px`;
+        span.style.lineHeight = `${px}px`; // match surrounding line box
+        span.style.height = `${px}px`;
+        span.style.verticalAlign = "-0.12em"; // visually centers with image emojis
+        span.style.fontWeight = "400";
         span.style.fontFamily = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"';
-        // <<< end fixes >>>
 
         frag.appendChild(span);
         last = offset + m.length;
