@@ -22,7 +22,7 @@
   const MOD_IMG  = "/public/badges/mod.gif";
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
-  const HYPE_THRESHOLD     = 5;            // msgs per minute
+  const HYPE_THRESHOLD     = 500;            // msgs per minute
   const HYPE_DURATION_MS   = 8000;           // ~8s visible
   const HYPE_COOLDOWN_MS   = 30 * 60 * 1000; // 30 minutes
   const SPEED_WINDOW_MS    = 60000;          // rolling 60s window
