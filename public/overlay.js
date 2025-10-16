@@ -1,4 +1,4 @@
-// public/overlay.js 
+// public/overlay.js
 (function () {
   const stack = document.getElementById("stack");
 
@@ -57,7 +57,7 @@
 
     let i = 0;
     const tryNext = () => {
-      if (i >= candidates.length) return;
+      if (i >= candidates.length) return; // none worked; alt text remains
       hypeImg.onload = () => { hypeReady = true; };
       hypeImg.onerror = () => { i++; tryNext(); };
       hypeImg.decoding = "async";
@@ -83,7 +83,7 @@
     if (!now) now = Date.now();
     // Respect cooldown
     if (now - lastHypeAt < HYPE_COOLDOWN_MS) return;
-    // Show only when the image is ready
+    // Only show when the image is ready
     if (!hypeReady) return;
 
     lastHypeAt = now;
@@ -104,10 +104,20 @@
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
-    "#FF4D4D","#FF8A4D","#FFCA3A","#8AC926",
-    "#52D1DC","#4D96FF","#B04DFF","#FF4DB7",
-    "#32D583","#F97066","#12B0E8","#7A5AF8",
-    "#EE46BC","#16BDCA",
+    "#FF4D4D",
+    "#FF8A4D",
+    "#FFCA3A",
+    "#8AC926",
+    "#52D1DC",
+    "#4D96FF",
+    "#B04DFF",
+    "#FF4DB7",
+    "#32D583",
+    "#F97066",
+    "#12B0E8",
+    "#7A5AF8",
+    "#EE46BC",
+    "#16BDCA",
   ];
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
@@ -120,7 +130,9 @@
   }
 
   function isBot(name) {
-    const n = String(name || "").toLowerCase().replace(/\s+/g, "");
+    const n = String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, "");
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
 
@@ -220,7 +232,11 @@
     });
 
     const maxKeep =
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
+      parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--max-keep",
+        ),
+      ) || 600;
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
   }
 
@@ -239,7 +255,9 @@
       a.appendChild(makeBadgeImg(memberBadges[0], "member"));
     }
 
-    a.appendChild(document.createTextNode(`${(author || "User").toUpperCase()}:`));
+    a.appendChild(
+      document.createTextNode(`${(author || "User").toUpperCase()}:`),
+    );
 
     const m = document.createElement("span");
     m.className = "message";
@@ -298,7 +316,11 @@
 
   // Wrap native Unicode emoji so they visually match text height
   function normalizeUnicodeEmoji(container) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+    );
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
@@ -307,7 +329,8 @@
       const text = node.nodeValue;
       if (!text) return;
 
-      const quick = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
+      const quick =
+        /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
       if (!quick.test(text)) return;
 
       let emojiSeq;
@@ -324,7 +347,8 @@
       const frag = document.createDocumentFragment();
       let last = 0;
       text.replace(emojiSeq, (m, offset) => {
-        if (offset > last) frag.appendChild(document.createTextNode(text.slice(last, offset)));
+        if (offset > last)
+          frag.appendChild(document.createTextNode(text.slice(last, offset)));
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
         span.textContent = m;
@@ -333,7 +357,8 @@
         return m;
       });
       if (last === 0) return;
-      if (last < text length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (last < text.length)
+        frag.appendChild(document.createTextNode(text.slice(last)));
       node.parentNode.replaceChild(frag, node);
     });
   }
