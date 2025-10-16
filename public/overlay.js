@@ -22,35 +22,49 @@
   const MOD_IMG  = "/public/badges/mod.gif";
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
-  const HYPE_THRESHOLD     = 5;          // msgs per minute
-  const HYPE_DURATION_MS   = 8000;         // show ~8s
-  const HYPE_COOLDOWN_MS   = 30 * 60 * 1000; // 30 minutes cooldown
-  const SPEED_WINDOW_MS    = 60000;        // rolling 60s window
+  const HYPE_THRESHOLD     = 5;            // msgs per minute
+  const HYPE_DURATION_MS   = 8000;           // ~8s visible
+  const HYPE_COOLDOWN_MS   = 30 * 60 * 1000; // 30 minutes
+  const SPEED_WINDOW_MS    = 60000;          // rolling 60s window
 
   const hypeEl  = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
-  const arrivalTimes = [];                 // timestamps for non-system msgs
+  const arrivalTimes = [];
   let hypeTimer    = null;
   let hypeVisible  = false;
   let lastHypeAt   = 0;
+  let hypeReady    = false;
 
-  // Resolve /pepe.gif path robustly on the REAL <img> element
+  // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
     const override = params.get("hype");
+    const dirPath = (function () {
+      const p = window.location.pathname;
+      const idx = p.lastIndexOf("/");
+      return idx > 0 ? p.slice(0, idx) : "/";
+    })();
+
     const candidates = override
       ? [decodeURIComponent(override)]
-      : ["/pepe.gif", "/public/pepe.gif", "pepe.gif", "public/pepe.gif"];
+      : [
+          "/pepe.gif",
+          "/public/pepe.gif",
+          "pepe.gif",
+          "public/pepe.gif",
+          `${dirPath.replace(/\/$/, "")}/pepe.gif`,
+          `${dirPath.replace(/\/$/, "")}/public/pepe.gif`,
+        ];
 
     let i = 0;
-    function tryNext() {
-      if (i >= candidates.length) return; // leave alt text if none found
-      hypeImg.onload = () => { /* loaded successfully; keep this src */ };
+    const tryNext = () => {
+      if (i >= candidates.length) return;
+      hypeImg.onload = () => { hypeReady = true; };
       hypeImg.onerror = () => { i++; tryNext(); };
       hypeImg.decoding = "async";
       hypeImg.referrerPolicy = "no-referrer";
       hypeImg.crossOrigin = "anonymous";
       hypeImg.src = candidates[i];
-    }
+    };
     tryNext();
   })();
 
@@ -61,7 +75,7 @@
     const cutoff = now - SPEED_WINDOW_MS;
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
 
-    const perMinute = arrivalTimes.length; // 60s window = msgs/min
+    const perMinute = arrivalTimes.length; // 60s window
     if (perMinute > HYPE_THRESHOLD) triggerHype(now);
   }
 
@@ -69,6 +83,8 @@
     if (!now) now = Date.now();
     // Respect cooldown
     if (now - lastHypeAt < HYPE_COOLDOWN_MS) return;
+    // Show only when the image is ready
+    if (!hypeReady) return;
 
     lastHypeAt = now;
     if (hypeVisible) return;
@@ -81,7 +97,6 @@
       hypeVisible = false;
       hypeEl.classList.remove("show");
       hypeTimer = null;
-      // Cooldown continues to run via lastHypeAt timestamp
     }, HYPE_DURATION_MS);
   }
   // ===== end hype GIF =====
@@ -132,7 +147,11 @@
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === "status") {
-          inbox.push({ type: "system", author: "System", html: escapeHtml(String(msg.text)) });
+          inbox.push({
+            type: "system",
+            author: "System",
+            html: escapeHtml(String(msg.text)),
+          });
           scheduleFlush();
         } else if (msg.type === "single") {
           inbox.push(msg.message);
@@ -152,7 +171,8 @@
     let nonSystemCount = 0;
 
     for (const payload of items) {
-      const { author, html, isMod, isOwner, isMember, member_badges, type } = payload || {};
+      const { author, html, isMod, isOwner, isMember, member_badges, type } =
+        payload || {};
       if (type !== "system" && isBot(author)) continue;
 
       if (type !== "system") nonSystemCount++;
@@ -177,7 +197,7 @@
 
     stack.appendChild(fragment);
 
-    // j-chat style push-up
+    // j-chat style push-up (no timing changes to fetching/speed)
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
@@ -313,7 +333,7 @@
         return m;
       });
       if (last === 0) return;
-      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (last < text length) frag.appendChild(document.createTextNode(text.slice(last)));
       node.parentNode.replaceChild(frag, node);
     });
   }
