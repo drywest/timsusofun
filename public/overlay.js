@@ -21,6 +21,39 @@
   const OWNER_IMG = "/public/badges/owner.png";
   const MOD_IMG = "/public/badges/mod.gif";
 
+  // ===== Chat speed → hype GIF (added) =====
+  const HYPE_THRESHOLD = 500;       // msgs per minute
+  const HYPE_DURATION_MS = 8000;    // show 5–10s; we use ~8s
+  const SPEED_WINDOW_MS = 60000;    // rolling 60s window
+  const hypeEl = document.getElementById("hype");
+  const arrivalTimes = [];          // timestamps (ms) for non-system msgs
+  let hypeTimer = null;
+  let hypeVisible = false;
+
+  function recordMessages(count) {
+    const now = Date.now();
+    for (let i = 0; i < count; i++) arrivalTimes.push(now);
+    // drop anything older than window
+    const cutoff = now - SPEED_WINDOW_MS;
+    while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
+
+    const ratePerMinute = arrivalTimes.length; // window is 60s
+    if (ratePerMinute > HYPE_THRESHOLD) triggerHype();
+  }
+
+  function triggerHype() {
+    if (hypeVisible) return;
+    hypeVisible = true;
+    hypeEl.classList.add("show");
+    if (hypeTimer) clearTimeout(hypeTimer);
+    hypeTimer = setTimeout(() => {
+      hypeVisible = false;
+      hypeEl.classList.remove("show");
+      hypeTimer = null;
+    }, HYPE_DURATION_MS);
+  }
+  // ===== end hype GIF =====
+
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
@@ -100,10 +133,15 @@
   function pushBatch(items) {
     const fragment = document.createDocumentFragment();
     const newLines = [];
+    let nonSystemCount = 0; // for hype rate tracking
+
     for (const payload of items) {
       const { author, html, isMod, isOwner, isMember, member_badges, type } =
         payload || {};
       if (type !== "system" && isBot(author)) continue;
+
+      if (type !== "system") nonSystemCount++;
+
       const line = buildLine(
         type === "system" ? "System" : author || "User",
         type === "system" ? html || "" : html || "",
@@ -119,6 +157,9 @@
       newLines.push(line);
     }
     if (!newLines.length) return;
+
+    // record chat speed from number of non-system messages in this push
+    if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
 
