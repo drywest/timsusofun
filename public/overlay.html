@@ -10,11 +10,12 @@
 
       :root{
         --line-gap:10px;
-        --font-size:35px;
+        /* slightly smaller so more messages fit */
+        --font-size:32px; /* was 35px */
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
-        --emoji-scale:142;        /* <— tweak if you want them bigger/smaller */
+        --emoji-scale:142;        /* <— leave as-is */
         --max-keep:400;
       }
 
@@ -48,7 +49,7 @@
       /* YouTube emoji <img> */
       .emoji{ height:1em; vertical-align:-0.15em; display:inline-block; }
 
-      /* Native (Unicode) emoji wrapped by JS → perfectly matches visual height */
+      /* Native (Unicode) emoji wrapped by JS */
       .emoji-char{
         display:inline-block;
         width:1em;               /* reserve layout width */
@@ -63,10 +64,40 @@
         /* prevent overlap with following text when scaled wider than 1em */
         margin-right: calc((var(--emoji-scale) - 1) * 1em);
       }
+
+      /* ===== Hype GIF overlay (added) ===== */
+      #hype {
+        position: absolute;
+        left: 50%;
+        bottom: 10px;
+        transform: translateX(-50%) translateY(16px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 220ms ease, transform 220ms ease;
+        z-index: 5;
+      }
+      #hype.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      #hype img {
+        display:block;
+        max-width: 50vw;
+        max-height: 28vh;
+        width: auto;
+        height: auto;
+        filter: drop-shadow(0 10px 24px rgba(0,0,0,.35));
+      }
     </style>
   </head>
   <body>
     <div id="stack" class="stack"></div>
+
+    <!-- Hype GIF: shown by JS when chat speed > 500 msgs/min -->
+    <div id="hype" aria-hidden="true">
+      <img src="/public/pepe.gif" alt="Chat is fast!" />
+    </div>
+
     <script src="/overlay.js"></script>
   </body>
 </html>
