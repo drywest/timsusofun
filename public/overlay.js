@@ -2,7 +2,7 @@
 (function () {
   const stack = document.getElementById("stack");
 
-  // Tuning: ?fs=36&keep=600
+  // Tuning: ?fs=36&keep=600&hype=<url>
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
@@ -19,41 +19,39 @@
 
   // Owner/Mod badge assets
   const OWNER_IMG = "/public/badges/owner.png";
-  const MOD_IMG = "/public/badges/mod.gif";
+  const MOD_IMG  = "/public/badges/mod.gif";
 
-  // ===== Chat speed → hype GIF =====
-  const HYPE_THRESHOLD = 5;       // msgs per minute
-  const HYPE_DURATION_MS = 8000;    // show ~8s
-  const SPEED_WINDOW_MS = 60000;    // rolling 60s window
-  const hypeEl = document.getElementById("hype");
+  // ===== Chat speed → hype GIF (with 30 min cooldown) =====
+  const HYPE_THRESHOLD     = 500;          // msgs per minute
+  const HYPE_DURATION_MS   = 8000;         // show ~8s
+  const HYPE_COOLDOWN_MS   = 30 * 60 * 1000; // 30 minutes cooldown
+  const SPEED_WINDOW_MS    = 60000;        // rolling 60s window
+
+  const hypeEl  = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
-  const arrivalTimes = [];          // timestamps (ms) for non-system msgs
-  let hypeTimer = null;
-  let hypeVisible = false;
+  const arrivalTimes = [];                 // timestamps for non-system msgs
+  let hypeTimer    = null;
+  let hypeVisible  = false;
+  let lastHypeAt   = 0;
 
-  // Robust path resolution for pepe.gif:
-  // 1) explicit ?hype=<url> wins
-  // 2) try /pepe.gif, /public/pepe.gif, pepe.gif, public/pepe.gif
-  (function resolveHypeGif(){
+  // Resolve /pepe.gif path robustly on the REAL <img> element
+  (function resolveHypeGif() {
     const override = params.get("hype");
     const candidates = override
       ? [decodeURIComponent(override)]
       : ["/pepe.gif", "/public/pepe.gif", "pepe.gif", "public/pepe.gif"];
+
     let i = 0;
-    const test = new Image();
-    test.decoding = "async";
-    test.referrerPolicy = "no-referrer";
-    test.crossOrigin = "anonymous";
-    test.onload = () => { hypeImg.src = test.src; };
-    test.onerror = () => {
-      i++;
-      if (i < candidates.length) {
-        test.src = candidates[i];
-      } else {
-        // leave src empty if none load
-      }
-    };
-    test.src = candidates[i];
+    function tryNext() {
+      if (i >= candidates.length) return; // leave alt text if none found
+      hypeImg.onload = () => { /* loaded successfully; keep this src */ };
+      hypeImg.onerror = () => { i++; tryNext(); };
+      hypeImg.decoding = "async";
+      hypeImg.referrerPolicy = "no-referrer";
+      hypeImg.crossOrigin = "anonymous";
+      hypeImg.src = candidates[i];
+    }
+    tryNext();
   })();
 
   function recordMessages(count) {
@@ -62,19 +60,28 @@
     // drop old
     const cutoff = now - SPEED_WINDOW_MS;
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
-    const perMinute = arrivalTimes.length; // 60s window
-    if (perMinute > HYPE_THRESHOLD) triggerHype();
+
+    const perMinute = arrivalTimes.length; // 60s window = msgs/min
+    if (perMinute > HYPE_THRESHOLD) triggerHype(now);
   }
 
-  function triggerHype() {
+  function triggerHype(now) {
+    if (!now) now = Date.now();
+    // Respect cooldown
+    if (now - lastHypeAt < HYPE_COOLDOWN_MS) return;
+
+    lastHypeAt = now;
     if (hypeVisible) return;
+
     hypeVisible = true;
     hypeEl.classList.add("show");
+
     if (hypeTimer) clearTimeout(hypeTimer);
     hypeTimer = setTimeout(() => {
       hypeVisible = false;
       hypeEl.classList.remove("show");
       hypeTimer = null;
+      // Cooldown continues to run via lastHypeAt timestamp
     }, HYPE_DURATION_MS);
   }
   // ===== end hype GIF =====
@@ -82,20 +89,10 @@
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
-    "#FF4D4D",
-    "#FF8A4D",
-    "#FFCA3A",
-    "#8AC926",
-    "#52D1DC",
-    "#4D96FF",
-    "#B04DFF",
-    "#FF4DB7",
-    "#32D583",
-    "#F97066",
-    "#12B0E8",
-    "#7A5AF8",
-    "#EE46BC",
-    "#16BDCA",
+    "#FF4D4D","#FF8A4D","#FFCA3A","#8AC926",
+    "#52D1DC","#4D96FF","#B04DFF","#FF4DB7",
+    "#32D583","#F97066","#12B0E8","#7A5AF8",
+    "#EE46BC","#16BDCA",
   ];
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
@@ -108,9 +105,7 @@
   }
 
   function isBot(name) {
-    const n = String(name || "")
-      .toLowerCase()
-      .replace(/\s+/g, "");
+    const n = String(name || "").toLowerCase().replace(/\s+/g, "");
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
 
@@ -137,11 +132,7 @@
       try {
         const msg = JSON.parse(ev.data);
         if (msg.type === "status") {
-          inbox.push({
-            type: "system",
-            author: "System",
-            html: escapeHtml(String(msg.text)),
-          });
+          inbox.push({ type: "system", author: "System", html: escapeHtml(String(msg.text)) });
           scheduleFlush();
         } else if (msg.type === "single") {
           inbox.push(msg.message);
@@ -158,11 +149,10 @@
   function pushBatch(items) {
     const fragment = document.createDocumentFragment();
     const newLines = [];
-    let nonSystemCount = 0; // for hype tracking
+    let nonSystemCount = 0;
 
     for (const payload of items) {
-      const { author, html, isMod, isOwner, isMember, member_badges, type } =
-        payload || {};
+      const { author, html, isMod, isOwner, isMember, member_badges, type } = payload || {};
       if (type !== "system" && isBot(author)) continue;
 
       if (type !== "system") nonSystemCount++;
@@ -183,18 +173,15 @@
     }
     if (!newLines.length) return;
 
-    // record chat speed from the number of non-system messages that just arrived
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
 
-    // j-chat style push-up (no timing changes to fetching/speed)
+    // j-chat style push-up
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
-    newLines.forEach((el) => {
-      pushBy += el.offsetHeight + gap;
-    });
+    newLines.forEach((el) => { pushBy += el.offsetHeight + gap; });
 
     stack.style.transition = "none";
     stack.style.transform = `translateY(${pushBy}px)`;
@@ -213,11 +200,7 @@
     });
 
     const maxKeep =
-      parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue(
-          "--max-keep",
-        ),
-      ) || 600;
+      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
   }
 
@@ -231,14 +214,12 @@
 
     // Badges BEFORE username: owner → mod → membership (primary)
     if (isOwner) a.appendChild(makeBadgeImg(OWNER_IMG, "owner"));
-    if (isMod) a.appendChild(makeBadgeImg(MOD_IMG, "mod"));
+    if (isMod)   a.appendChild(makeBadgeImg(MOD_IMG,  "mod"));
     if (isMember && memberBadges && memberBadges.length) {
       a.appendChild(makeBadgeImg(memberBadges[0], "member"));
     }
 
-    a.appendChild(
-      document.createTextNode(`${(author || "User").toUpperCase()}:`),
-    );
+    a.appendChild(document.createTextNode(`${(author || "User").toUpperCase()}:`));
 
     const m = document.createElement("span");
     m.className = "message";
@@ -256,13 +237,13 @@
     const img = document.createElement("img");
     img.alt = alt || "badge";
     img.style.height = "1em";
-    img.style.width = "auto";
+    img.style.width  = "auto";
     img.style.verticalAlign = "-0.12em";
-    img.style.marginRight = "0.18em";
+    img.style.marginRight   = "0.18em";
     img.decoding = "async";
-    img.loading = "eager";
+    img.loading  = "eager";
     img.referrerPolicy = "no-referrer";
-    img.crossOrigin = "anonymous";
+    img.crossOrigin   = "anonymous";
     img.src = src;
     return img;
   }
@@ -279,12 +260,12 @@
       newImg.alt = alt;
       newImg.className = "emoji";
       newImg.style.height = "1em";
-      newImg.style.width = "auto";
+      newImg.style.width  = "auto";
       newImg.style.verticalAlign = "-0.15em";
       newImg.decoding = "async";
-      newImg.loading = "eager";
+      newImg.loading  = "eager";
       newImg.referrerPolicy = "no-referrer";
-      newImg.crossOrigin = "anonymous";
+      newImg.crossOrigin   = "anonymous";
       newImg.onerror = () => {
         const span = document.createElement("span");
         span.textContent = alt;
@@ -297,11 +278,7 @@
 
   // Wrap native Unicode emoji so they visually match text height
   function normalizeUnicodeEmoji(container) {
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      null,
-    );
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
@@ -310,8 +287,7 @@
       const text = node.nodeValue;
       if (!text) return;
 
-      const quick =
-        /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
+      const quick = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
       if (!quick.test(text)) return;
 
       let emojiSeq;
@@ -328,8 +304,7 @@
       const frag = document.createDocumentFragment();
       let last = 0;
       text.replace(emojiSeq, (m, offset) => {
-        if (offset > last)
-          frag.appendChild(document.createTextNode(text.slice(last, offset)));
+        if (offset > last) frag.appendChild(document.createTextNode(text.slice(last, offset)));
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
         span.textContent = m;
@@ -338,8 +313,7 @@
         return m;
       });
       if (last === 0) return;
-      if (last < text.length)
-        frag.appendChild(document.createTextNode(text.slice(last)));
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
       node.parentNode.replaceChild(frag, node);
     });
   }
