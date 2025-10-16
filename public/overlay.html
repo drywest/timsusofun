@@ -15,7 +15,7 @@
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
-        --emoji-scale:142;        /* <— leave as-is */
+        --emoji-scale:142;        /* leave as-is */
         --max-keep:400;
       }
 
@@ -52,20 +52,19 @@
       /* Native (Unicode) emoji wrapped by JS */
       .emoji-char{
         display:inline-block;
-        width:1em;               /* reserve layout width */
-        height:1em;              /* baseline height reference */
+        width:1em;
+        height:1em;
         line-height:1;
-        font-size:1em;           /* base before scaling */
-        font-weight:400;         /* avoid bold inflation */
+        font-size:1em;
+        font-weight:400;
         font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
         transform: translateY(0.06em) scale(var(--emoji-scale));
         transform-origin: left bottom;
         vertical-align:-0.25em;
-        /* prevent overlap with following text when scaled wider than 1em */
         margin-right: calc((var(--emoji-scale) - 1) * 1em);
       }
 
-      /* ===== Hype GIF overlay (added) ===== */
+      /* Hype GIF overlay */
       #hype {
         position: absolute;
         left: 50%;
@@ -93,9 +92,9 @@
   <body>
     <div id="stack" class="stack"></div>
 
-    <!-- Hype GIF: shown by JS when chat speed > 500 msgs/min -->
+    <!-- Hype GIF: src will be resolved by JS (tries /pepe.gif, /public/pepe.gif, etc.) -->
     <div id="hype" aria-hidden="true">
-      <img src="/public/pepe.gif" alt="Chat is fast!" />
+      <img id="hype-img" alt="Chat is fast!" />
     </div>
 
     <script src="/overlay.js"></script>
