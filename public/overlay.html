@@ -5,13 +5,17 @@
     <title>YT Chat Overlay</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      html, body { margin:0; padding:0; height:100%; background:transparent; }
+      html, body {
+        margin:0; padding:0; height:100%; background:transparent;
+        /* FIX: never show a scrollbar from overlay animations */
+        overflow:hidden;
+      }
       * { font-family: "Roboto","Apple Color Emoji","Apple Emoji","Roboto Color Emoji",Tahoma,Geneva,Verdana,sans-serif !important; }
 
       :root{
         --line-gap:10px;
-        /* slightly smaller so more messages fit */
-        --font-size:32px; /* was 35px */
+        /* you asked for slightly smaller text earlier */
+        --font-size:32px;
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;          /* new line micro fade/slide */
         --push-ms:140ms;          /* j-chat push-up */
@@ -52,11 +56,8 @@
       /* Native (Unicode) emoji wrapped by JS */
       .emoji-char{
         display:inline-block;
-        width:1em;
-        height:1em;
-        line-height:1;
-        font-size:1em;
-        font-weight:400;
+        width:1em; height:1em; line-height:1;
+        font-size:1em; font-weight:400;
         font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
         transform: translateY(0.06em) scale(var(--emoji-scale));
         transform-origin: left bottom;
@@ -64,27 +65,25 @@
         margin-right: calc((var(--emoji-scale) - 1) * 1em);
       }
 
-      /* Hype GIF overlay */
+      /* ===== Hype GIF overlay ===== */
       #hype {
         position: absolute;
         left: 50%;
         bottom: 10px;
-        transform: translateX(-50%) translateY(16px);
+        transform: translateX(-50%); /* FIX: no vertical translate that could cause overflow */
         opacity: 0;
         pointer-events: none;
-        transition: opacity 220ms ease, transform 220ms ease;
+        transition: opacity 220ms ease; /* fade only to avoid scrolling */
         z-index: 5;
       }
-      #hype.show {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
-      }
+      #hype.show { opacity: 1; }
+
       #hype img {
         display:block;
-        max-width: 50vw;
-        max-height: 28vh;
-        width: auto;
-        height: auto;
+        /* FIX: always fit within the viewport, any aspect ratio */
+        max-width: min(95vw, 1200px);
+        max-height: min(60vh, 800px);
+        width: auto; height: auto;
         filter: drop-shadow(0 10px 24px rgba(0,0,0,.35));
       }
     </style>
@@ -92,7 +91,7 @@
   <body>
     <div id="stack" class="stack"></div>
 
-    <!-- JS sets the correct src at runtime (tries multiple paths) -->
+    <!-- Hype GIF: src resolved by JS -->
     <div id="hype" aria-hidden="true">
       <img id="hype-img" alt="Chat is fast!" />
     </div>
