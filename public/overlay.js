@@ -21,24 +21,49 @@
   const OWNER_IMG = "/public/badges/owner.png";
   const MOD_IMG = "/public/badges/mod.gif";
 
-  // ===== Chat speed → hype GIF (added) =====
+  // ===== Chat speed → hype GIF =====
   const HYPE_THRESHOLD = 5;       // msgs per minute
-  const HYPE_DURATION_MS = 8000;    // show 5–10s; we use ~8s
+  const HYPE_DURATION_MS = 8000;    // show ~8s
   const SPEED_WINDOW_MS = 60000;    // rolling 60s window
   const hypeEl = document.getElementById("hype");
+  const hypeImg = document.getElementById("hype-img");
   const arrivalTimes = [];          // timestamps (ms) for non-system msgs
   let hypeTimer = null;
   let hypeVisible = false;
 
+  // Robust path resolution for pepe.gif:
+  // 1) explicit ?hype=<url> wins
+  // 2) try /pepe.gif, /public/pepe.gif, pepe.gif, public/pepe.gif
+  (function resolveHypeGif(){
+    const override = params.get("hype");
+    const candidates = override
+      ? [decodeURIComponent(override)]
+      : ["/pepe.gif", "/public/pepe.gif", "pepe.gif", "public/pepe.gif"];
+    let i = 0;
+    const test = new Image();
+    test.decoding = "async";
+    test.referrerPolicy = "no-referrer";
+    test.crossOrigin = "anonymous";
+    test.onload = () => { hypeImg.src = test.src; };
+    test.onerror = () => {
+      i++;
+      if (i < candidates.length) {
+        test.src = candidates[i];
+      } else {
+        // leave src empty if none load
+      }
+    };
+    test.src = candidates[i];
+  })();
+
   function recordMessages(count) {
     const now = Date.now();
     for (let i = 0; i < count; i++) arrivalTimes.push(now);
-    // drop anything older than window
+    // drop old
     const cutoff = now - SPEED_WINDOW_MS;
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
-
-    const ratePerMinute = arrivalTimes.length; // window is 60s
-    if (ratePerMinute > HYPE_THRESHOLD) triggerHype();
+    const perMinute = arrivalTimes.length; // 60s window
+    if (perMinute > HYPE_THRESHOLD) triggerHype();
   }
 
   function triggerHype() {
@@ -133,7 +158,7 @@
   function pushBatch(items) {
     const fragment = document.createDocumentFragment();
     const newLines = [];
-    let nonSystemCount = 0; // for hype rate tracking
+    let nonSystemCount = 0; // for hype tracking
 
     for (const payload of items) {
       const { author, html, isMod, isOwner, isMember, member_badges, type } =
@@ -158,7 +183,7 @@
     }
     if (!newLines.length) return;
 
-    // record chat speed from number of non-system messages in this push
+    // record chat speed from the number of non-system messages that just arrived
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
