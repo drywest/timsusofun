@@ -22,7 +22,7 @@
   const MOD_IMG = "/public/badges/mod.gif";
 
   // ===== Chat speed → hype GIF (added) =====
-  const HYPE_THRESHOLD = 500;       // msgs per minute
+  const HYPE_THRESHOLD = 5;       // msgs per minute
   const HYPE_DURATION_MS = 8000;    // show 5–10s; we use ~8s
   const SPEED_WINDOW_MS = 60000;    // rolling 60s window
   const hypeEl = document.getElementById("hype");
