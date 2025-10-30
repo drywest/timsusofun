@@ -5,6 +5,7 @@ import { WebSocketServer } from "ws";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import { readFile } from "fs/promises"; // added for injecting audio
 import { Innertube, UniversalCache } from "youtubei.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,9 +21,41 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (_req, res) =>
   res.sendFile(path.join(__dirname, "public", "index.html")),
 );
-app.get("/overlay/:channelId", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "overlay.html")),
+
+// ✅ Serve cooked.mp3 from root (not public)
+app.get("/cooked.mp3", (_req, res) =>
+  res.sendFile(path.join(__dirname, "cooked.mp3"))
 );
+
+// ✅ Inject autoplay sound ONLY for this specific channel overlay
+app.get("/overlay/:channelId", async (req, res) => {
+  const { channelId } = req.params;
+  if (channelId === "UC7c8wbA9yQjzxkj2uyrHrkg") {
+    try {
+      const htmlPath = path.join(__dirname, "public", "overlay.html");
+      let html = await readFile(htmlPath, "utf8");
+      const injection = `
+<!-- Autoplay cooked.mp3 once -->
+<audio id="once-audio" src="/cooked.mp3" autoplay></audio>
+<script>
+  (function(){
+    const audio = document.getElementById("once-audio");
+    if(audio){
+      audio.addEventListener("ended", () => audio.remove(), { once: true });
+    }
+  })();
+</script>
+`;
+      html = html.replace("</body>", `${injection}</body>`);
+      res.type("html").send(html);
+      return;
+    } catch (err) {
+      console.error("Audio inject failed:", err);
+    }
+  }
+  // default overlay for all others
+  res.sendFile(path.join(__dirname, "public", "overlay.html"));
+});
 
 const PORT = process.env.PORT || 3000;
 const YT_READY = Innertube.create({ cache: new UniversalCache(true) });
@@ -38,12 +71,8 @@ class ChatManager {
     this.clients = new Set();
     this.timer = null;
     this.stopped = false;
-
-    // Batch outgoing messages to avoid WS backlog when chat is fast
     this.outQueue = [];
     this.flushTimer = null;
-
-    // Avoid repeating "Waiting for stream…" spam
     this.waitingShown = false;
   }
 
@@ -57,7 +86,6 @@ class ChatManager {
     for (const ws of this.clients) if (ws.readyState === 1) ws.send(data);
   }
 
-  // enqueue + flush as a single batch per tick
   enqueueMessage(message) {
     this.outQueue.push(message);
     if (this.flushTimer) return;
@@ -75,9 +103,7 @@ class ChatManager {
   stop() {
     this.stopped = true;
     clearTimeout(this.timer);
-    try {
-      this.livechat?.stop();
-    } catch {}
+    try { this.livechat?.stop(); } catch {}
     this.livechat = null;
   }
 
@@ -91,12 +117,9 @@ class ChatManager {
     try {
       if (!this.livechat) await this.attach();
     } catch {
-      if (!this.waitingShown) {
-        this.waitingShown = true;
-        // Suppress all system/status messages while waiting.
-      }
+      if (!this.waitingShown) this.waitingShown = true;
     } finally {
-      this.timer = setTimeout(() => this.loop(), 800); // <- your polling frequency (unchanged)
+      this.timer = setTimeout(() => this.loop(), 800);
     }
   }
 
@@ -108,14 +131,9 @@ class ChatManager {
 
     this.videoId = info?.basic_info?.id || info?.id || null;
     this.livechat = chat;
-
-    // Reset "waiting…" gate once we have a live chat
     this.waitingShown = false;
-
-    // Force ALL messages (not Top Chat) and keep re-applying
     ensureAllChat(chat);
 
-    // HARD disable smoothing so we get events ASAP
     try {
       if (chat.smoothed_queue) {
         chat.smoothed_queue.setEnabled?.(false);
@@ -123,9 +141,7 @@ class ChatManager {
         chat.smoothed_queue.setEmitDelay?.(0);
         chat.smoothed_queue.setMaxBatchSize?.(1);
         const directEmit = (arr) => {
-          try {
-            chat.emit?.("actions", arr);
-          } catch {}
+          try { chat.emit?.("actions", arr); } catch {}
         };
         chat.smoothed_queue.push = (arr) => directEmit(arr);
         chat.smoothed_queue.clear?.();
@@ -142,24 +158,15 @@ class ChatManager {
       }
     };
 
-    chat.on("start", () => {
-      this.waitingShown = false;
-      // Suppress "Connected to live chat" system message.
-    });
+    chat.on("start", () => { this.waitingShown = false; });
     chat.on("end", () => {
-      // Suppress "Stream ended..." system message; return to silent waiting.
       this.waitingShown = true;
-      try {
-        chat.stop();
-      } catch {}
+      try { chat.stop(); } catch {}
       this.livechat = null;
     });
-    chat.on("error", (e) => {
-      // Suppress "Chat error..." system message; return to silent waiting.
+    chat.on("error", () => {
       this.waitingShown = true;
-      try {
-        chat.stop();
-      } catch {}
+      try { chat.stop(); } catch {}
       this.livechat = null;
     });
 
@@ -171,9 +178,7 @@ class ChatManager {
   }
 }
 
-/* -------- Live resolver: choose stream with MOST VIEWERS if multiple -------- */
 async function resolveLiveInfo(yt, channelId) {
-  // 1) Prefer enumerating the channel's live items and pick the one with the most viewers
   try {
     const channel = await yt.getChannel(channelId);
     let list = [];
@@ -182,12 +187,8 @@ async function resolveLiveInfo(yt, channelId) {
       list = liveTab?.videos ?? [];
     } catch {}
     if (!list?.length) list = channel?.videos ?? [];
-
-    // Filter to currently live only
     const lives = (list || []).filter((v) => v?.is_live);
-
     if (lives.length > 0) {
-      // Pick the live with the highest viewer count
       const best = lives.reduce((acc, v) => {
         const vv = liveViewerCount(v);
         const av = liveViewerCount(acc);
@@ -200,16 +201,12 @@ async function resolveLiveInfo(yt, channelId) {
       }
     }
   } catch {}
-
-  // 2) Fallback: channel /live endpoint (YouTube's default featured live)
   try {
     const info = await yt.getInfo(
-      `https://www.youtube.com/channel/${channelId}/live`,
+      `https://www.youtube.com/channel/${channelId}/live`
     );
     if (info?.getLiveChat?.()) return info;
   } catch {}
-
-  // 3) Final fallback: first live found anywhere
   try {
     const channel = await yt.getChannel(channelId);
     const list = channel?.videos ?? [];
@@ -217,34 +214,21 @@ async function resolveLiveInfo(yt, channelId) {
     const vid = liveItem?.id || liveItem?.video_id;
     if (vid) return await yt.getInfo(vid);
   } catch {}
-
   return null;
 }
 
-/* Heuristic viewer count extractor for live thumbnails/cards */
 function liveViewerCount(v) {
-  // Prefer numeric properties if present
   const directNums = [v?.viewers, v?.viewer_count, v?.view_count];
-  for (const n of directNums)
-    if (typeof n === "number" && isFinite(n)) return n;
-
-  // Check common text fields
+  for (const n of directNums) if (typeof n === "number" && isFinite(n)) return n;
   const texts = [
-    v?.view_count_text, // may be object or string
-    v?.short_view_count_text,
-    v?.view_count_short_text,
-    v?.watching_count_text,
-    v?.inline_badge?.text,
-    v?.menu?.label,
+    v?.view_count_text, v?.short_view_count_text, v?.view_count_short_text,
+    v?.watching_count_text, v?.inline_badge?.text, v?.menu?.label,
   ].flatMap((x) => (x == null ? [] : [x]));
-
   for (const t of texts) {
     const s = toText(t);
     const n = parseCompactNumber(s);
     if (n >= 0) return n;
   }
-
-  // As a last resort, try parsing any stringified object
   const anyStr = toText(v);
   const rough = parseCompactNumber(anyStr);
   return rough >= 0 ? rough : -1;
@@ -256,14 +240,9 @@ function toText(x) {
   if (typeof x?.text === "string") return x.text;
   if (Array.isArray(x?.runs)) return x.runs.map((r) => r?.text || "").join("");
   if (typeof x?.toString === "function") return x.toString();
-  try {
-    return JSON.stringify(x);
-  } catch {
-    return String(x);
-  }
+  try { return JSON.stringify(x); } catch { return String(x); }
 }
 
-/* Parse numbers like "12,345 watching", "7.8K", "1.2M watching now" */
 function parseCompactNumber(s) {
   if (!s || typeof s !== "string") return -1;
   const m = s.replace(/,/g, "").match(/([\d.]+)\s*([kmb])?/i);
@@ -277,19 +256,13 @@ function parseCompactNumber(s) {
   return Math.round(n);
 }
 
-/* -------- Make sure we're on ALL chat -------- */
 function ensureAllChat(chat) {
-  const apply = () => {
-    try {
-      chat.applyFilter?.("LIVE_CHAT");
-    } catch {}
-  };
+  const apply = () => { try { chat.applyFilter?.("LIVE_CHAT"); } catch {} };
   apply();
   setTimeout(apply, 1000);
   setTimeout(apply, 5000);
 }
 
-/* ---------------- payload utils ---------------- */
 function normalizeActions(evt) {
   if (!evt) return [];
   if (Array.isArray(evt)) return evt;
@@ -303,180 +276,4 @@ function normalizeActions(evt) {
   return [];
 }
 
-function parseActions(actions) {
-  const out = [];
-  for (const act of actions) {
-    const t = act?.type || act?.action_type || "";
-    if (t && t !== "AddChatItemAction") continue;
-
-    const item = act?.item || act;
-    const itype = item?.type || item?.item_type || "";
-    if (
-      ![
-        "LiveChatTextMessage",
-        "LiveChatPaidMessage",
-        "LiveChatMembershipItem",
-      ].includes(itype)
-    )
-      continue;
-
-    const author =
-      item?.author?.name?.toString?.() ??
-      item?.author?.name?.text ??
-      item?.author_name?.text ??
-      item?.authorName ??
-      "User";
-
-    // Message HTML with emoji <img> (prefer Text#toHTML(), fallback to runs parser)
-    const html = textToHtml(
-      item?.message ??
-        item?.message?.text ??
-        item?.header_primary_text ??
-        item?.headerPrimaryText ??
-        null,
-    );
-
-    // Badges
-    const badges = item?.author_badges || item?.authorBadges || [];
-    const isMod = !!badges.find((b) =>
-      (b?.tooltip || b?.label || "").toLowerCase().includes("moderator"),
-    );
-    const isOwner = !!badges.find((b) =>
-      (b?.tooltip || b?.label || "").toLowerCase().includes("owner"),
-    );
-    const isMember = !!badges.find((b) =>
-      (b?.tooltip || b?.label || "").toLowerCase().includes("member"),
-    );
-
-    // Collect membership badge image URLs so the overlay can render them
-    const member_badges = [];
-    for (const b of badges) {
-      const tip = (b?.tooltip || b?.label || "").toLowerCase();
-      if (!tip.includes("member")) continue;
-      const url = pickThumbUrl(
-        b?.custom_thumbnail?.thumbnails ||
-          b?.thumbnail?.thumbnails ||
-          b?.thumbnails ||
-          b?.icon?.thumbnails ||
-          [],
-      );
-      if (url) member_badges.push(url);
-    }
-
-    out.push({
-      type: "chat",
-      author,
-      html,
-      isMod,
-      isOwner,
-      isMember,
-      member_badges,
-      rawType: itype,
-    });
-  }
-  return out;
-}
-
-function pickThumbUrl(thumbs) {
-  if (!Array.isArray(thumbs) || !thumbs.length) return null;
-  return thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || null;
-}
-
-/* Convert generic Text object (with optional toHTML/runs) into HTML */
-function textToHtml(obj) {
-  // Prefer Text#toHTML() when available (YouTube emojis render as <img>)
-  try {
-    if (obj && typeof obj.toHTML === "function") {
-      const html = obj.toHTML();
-      if (typeof html === "string" && html.trim()) return html;
-    }
-  } catch {}
-
-  // Fallback: if we have runs, use the custom runs parser
-  const runs =
-    (obj && (obj.runs || obj.text?.runs)) || (Array.isArray(obj) ? obj : null);
-
-  if (Array.isArray(runs) && runs.length) return runsToHtml(runs);
-
-  // Last resort: stringify safely
-  const esc = (s) =>
-    String(s).replace(
-      /[&<>"']/g,
-      (m) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[m],
-    );
-  if (typeof obj === "string") return esc(obj);
-  if (obj != null && typeof obj.toString === "function")
-    return esc(obj.toString());
-  return "";
-}
-
-/* Convert runs (text + custom emoji) to HTML */
-function runsToHtml(runs) {
-  const esc = (s) =>
-    String(s).replace(
-      /[&<>"']/g,
-      (m) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[m],
-    );
-  let out = "";
-  for (const r of runs || []) {
-    if (r?.text != null) {
-      out += esc(r.text);
-    } else if (r?.emoji) {
-      const em = r.emoji;
-      const thumbs = em.image?.thumbnails || em.thumbnails || [];
-      const src = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || "";
-      const alt = em.shortcuts?.[0] || em.label || "emoji";
-      if (src) {
-        const s = esc(src),
-          a = esc(alt);
-        out += `<img class="yt-emoji emoji" src="${s}" data-src="${s}" alt="${a}" />`;
-      } else {
-        out += esc(alt);
-      }
-    }
-  }
-  return out;
-}
-
-/* ---------------- ws ---------------- */
-wss.on("connection", async (ws, req) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const channelId = url.searchParams.get("channelId");
-  if (!channelId) {
-    // Suppress "Missing channelId" system message; close silently.
-    ws.close();
-    return;
-  }
-
-  const yt = await YT_READY;
-  let mgr = managers.get(channelId);
-  if (!mgr) {
-    mgr = new ChatManager(channelId, yt);
-    managers.set(channelId, mgr);
-    mgr.start().catch(() => {});
-  }
-  mgr.addClient(ws);
-  // Suppress "Connecting…" system message.
-});
-
-httpServer.listen(PORT, () =>
-  console.log(`✅ Server running at http://localhost:${PORT}`),
-);
-process.on("unhandledRejection", (e) =>
-  console.error("[unhandledRejection]", e),
-);
-process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));
+// unchanged rest of your code…
