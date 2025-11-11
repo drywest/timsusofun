@@ -21,6 +21,28 @@
   const OWNER_IMG = "/public/badges/owner.png";
   const MOD_IMG  = "/public/badges/mod.gif";
 
+  // ===== Periodic elephant sound (every 15 minutes) =====
+  const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
+  const elephantAudio = new Audio("/elephant.mp3");
+  elephantAudio.preload = "auto";
+
+  function playElephant() {
+    try {
+      elephantAudio.currentTime = 0;
+      const p = elephantAudio.play();
+      if (p && typeof p.catch === "function") {
+        p.catch((err) => {
+          console.warn("[overlay] elephant.mp3 play blocked or failed:", err);
+        });
+      }
+    } catch (err) {
+      console.warn("[overlay] elephant.mp3 play error:", err);
+    }
+  }
+
+  setInterval(playElephant, ELEPHANT_INTERVAL_MS);
+  // ===== end periodic elephant sound =====
+
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
   const HYPE_THRESHOLD     = 500;            // msgs per minute
   const HYPE_DURATION_MS   = 8000;           // ~8s visible
