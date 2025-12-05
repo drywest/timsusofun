@@ -11,7 +11,12 @@
         /* prevent scrollbars from overlay animations */
         overflow:hidden;
       }
-      * { font-family: "Lato","Apple Color Emoji","Apple Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif !important; }
+
+      * {
+        font-family: "Lato","Apple Color Emoji","Apple Emoji","Segoe UI Emoji",
+          "Segoe UI Symbol","Noto Color Emoji",system-ui,-apple-system,
+          BlinkMacSystemFont,"Segoe UI",sans-serif !important;
+      }
 
       :root{
         --line-gap:10px;
@@ -20,7 +25,6 @@
         --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
         --enter-ms:40ms;
         --push-ms:140ms;
-        --emoji-scale:142; /* leave as-is */
         --max-keep:400;
       }
 
@@ -41,8 +45,9 @@
         letter-spacing:.2px;
         color:#fff !important;
         text-shadow:var(--shadow);
-        filter:saturate(1.35);
         white-space:normal; word-break:break-word;
+        /* more saturation / pop */
+        filter:saturate(1.35);
 
         opacity:0; transform:translateY(8px);
         transition: transform var(--enter-ms) ease-out, opacity var(--enter-ms) ease-out;
@@ -52,19 +57,37 @@
       .author{ font-weight:900; margin-right:.25em; }
       .message{ font-weight:900; color:#fff !important; }
 
+      .badges{
+        display:inline-flex;
+        align-items:center;
+        margin-right:.25em;
+      }
+      .badges img{
+        height:1em;
+        width:auto;
+        vertical-align:-0.12em;
+        margin-right:0.18em;
+        image-rendering:auto;
+      }
+
       /* YouTube emoji <img> */
-      .emoji{ height:1em; vertical-align:-0.15em; display:inline-block; }
+      .emoji{
+        display:inline-block;
+        height:1.35em;
+        width:auto;
+        vertical-align:-0.25em;
+      }
 
       /* Native (Unicode) emoji wrapped by JS */
       .emoji-char{
         display:inline-block;
-        width:1em; height:1em; line-height:1;
-        font-size:1em; font-weight:400;
+        width:1.35em;
+        height:1.35em;
+        line-height:1.35em;
+        font-size:1.35em;
+        font-weight:900;
         font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
-        transform: translateY(0.06em) scale(var(--emoji-scale));
-        transform-origin: left bottom;
         vertical-align:-0.25em;
-        margin-right: calc((var(--emoji-scale) - 1) * 1em);
       }
 
       /* ===== Hype GIF overlay ===== */
@@ -78,7 +101,9 @@
         transition: opacity 220ms ease;
         z-index: 5;
       }
-      #hype.show { opacity: 1; }
+      #hype.show {
+        opacity: 1;
+      }
       #hype img {
         display:block;
         /* always fit while keeping aspect ratio */
