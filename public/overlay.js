@@ -251,51 +251,35 @@
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
+    // Simple, safe emoji surrogate/BMP range matcher
+    const emojiSeq = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/g;
+
     nodes.forEach((node) => {
       const text = node.nodeValue;
       if (!text) return;
 
-      const quick =
-        /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]|\uFE0F|\u200D/;
-      if (!quick.test(text)) return;
-
-      let emojiSeq;
-      try {
-        // extended emoji sequence matcher
-        emojiSeq = RegExp(
-          [
-            "(?:",
-            "[\\uD83C-\\uDBFF][\\uDC00-\\uDFFF]",
-            "|",
-            "[\\u2600-\\u27BF]",
-            ")",
-            "(?:",
-            "\\uFE0F?",
-            "(?:\\u200D(?:[\\uD83C-\\uDBFF][\\uDC00-\\uDFFF]|[\\u2600-\\u27BF])\\uFE0F?)*",
-            ")",
-          ].join(""),
-          "gu",
-        );
-      } catch {
-        emojiSeq =
-          /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:...:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*/g;
-      }
+      emojiSeq.lastIndex = 0;
+      if (!emojiSeq.test(text)) return;
+      emojiSeq.lastIndex = 0;
 
       const frag = document.createDocumentFragment();
       let last = 0;
-      text.replace(emojiSeq, (m, offset) => {
-        if (offset > last)
-          frag.appendChild(document.createTextNode(text.slice(last, offset)));
+      let match;
+      while ((match = emojiSeq.exec(text))) {
+        const idx = match.index;
+        if (idx > last) {
+          frag.appendChild(document.createTextNode(text.slice(last, idx)));
+        }
         const span = document.createElement("span");
         span.className = "emoji emoji-char";
-        span.textContent = m;
+        span.textContent = match[0];
         frag.appendChild(span);
-        last = offset + m.length;
-        return m;
-      });
+        last = idx + match[0].length;
+      }
       if (last === 0) return;
-      if (last < text.length)
+      if (last < text.length) {
         frag.appendChild(document.createTextNode(text.slice(last)));
+      }
       node.parentNode.replaceChild(frag, node);
     });
   }
