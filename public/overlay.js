@@ -70,7 +70,7 @@
 
     let i = 0;
     const tryNext = () => {
-      if (i >= candidates.length) return;
+      if (!hypeImg || i >= candidates.length) return;
       hypeImg.onload = () => { hypeReady = true; };
       hypeImg.onerror = () => { i++; tryNext(); };
       hypeImg.decoding = "async";
@@ -98,12 +98,12 @@
     if (hypeVisible) return;
 
     hypeVisible = true;
-    hypeEl.classList.add("show");
+    if (hypeEl) hypeEl.classList.add("show");
 
     if (hypeTimer) clearTimeout(hypeTimer);
     hypeTimer = setTimeout(() => {
       hypeVisible = false;
-      hypeEl.classList.remove("show");
+      if (hypeEl) hypeEl.classList.remove("show");
       hypeTimer = null;
     }, HYPE_DURATION_MS);
   }
@@ -186,12 +186,13 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // smooth fade (keep it)
+      // keep smooth fade
       line.style.opacity = "0";
       line.style.transform = "translateY(8px)";
       fragment.appendChild(line);
       newLines.push(line);
     }
+
     if (!newLines.length) return;
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
@@ -241,9 +242,9 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);        // YouTube emoji <img>
-    replaceUnicodeEmojiWithNoto(m); // Unicode emoji -> animated Noto
-    forceEmojiLayout(m);            // ✅ HARD FORCE (px sizing + baseline)
+    normalizeEmojiImages(m);          // YouTube emoji <img>
+    replaceUnicodeEmojiWithNoto(m);   // Unicode -> Noto animated/static -> Twemoji
+    forceEmojiLayoutPx(m);            // HARD FORCE: square + baseline in px
 
     line.appendChild(a);
     line.appendChild(m);
@@ -296,8 +297,9 @@
     });
   }
 
-  // ========= Unicode emoji -> Noto Emoji Animation =========
+  // ========= Unicode emoji -> Noto Emoji Animation (with REAL fallbacks) =========
   const NOTO_BASE = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
+  const TWEMOJI_BASE = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
 
   const graphemes =
     typeof Intl !== "undefined" && Intl.Segmenter
@@ -313,18 +315,42 @@
     hasPictographic = (s) => fallback.test(s);
   }
 
-  function emojiToNotoCode(emojiText) {
+  function emojiCodepoints(emojiText) {
     const cps = [];
     for (let i = 0; i < emojiText.length; i++) {
       const cp = emojiText.codePointAt(i);
-      cps.push(cp.toString(16));
+      cps.push(cp);
       if (cp > 0xffff) i++;
     }
-    return cps.join("_");
+    return cps;
   }
 
-  function makeNotoAnimatedEmoji(emojiText) {
-    const code = emojiToNotoCode(emojiText);
+  function notoCodeFromCps(cps) {
+    return cps.map((cp) => cp.toString(16)).join("_");
+  }
+  function twemojiCodeFromCps(cps) {
+    return cps.map((cp) => cp.toString(16)).join("-");
+  }
+
+  function makeNotoEmojiBox(emojiText) {
+    const cps = emojiCodepoints(emojiText);
+    const cpsNoFe0f = cps.filter((cp) => cp !== 0xfe0f);
+
+    const codes = [
+      notoCodeFromCps(cps),
+      notoCodeFromCps(cpsNoFe0f),
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+    const candidates = [];
+    for (const code of codes) {
+      candidates.push(`${NOTO_BASE}${code}/512.webp`);
+      candidates.push(`${NOTO_BASE}${code}/512.gif`);
+      candidates.push(`${NOTO_BASE}${code}/128.png`);
+    }
+
+    // final fallback: Twemoji svg (still image)
+    const tw = twemojiCodeFromCps(cpsNoFe0f.length ? cpsNoFe0f : cps);
+    candidates.push(`${TWEMOJI_BASE}${tw}.svg`);
 
     const img = document.createElement("img");
     img.alt = emojiText;
@@ -333,20 +359,14 @@
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    const webp = `${NOTO_BASE}${code}/512.webp`;
-    const gif = `${NOTO_BASE}${code}/512.gif`;
-
-    let triedGif = false;
+    let idx = 0;
     img.onerror = () => {
-      if (!triedGif) {
-        triedGif = true;
-        img.src = gif;
-        return;
-      }
-      img.replaceWith(document.createTextNode(emojiText));
+      idx++;
+      if (idx < candidates.length) img.src = candidates[idx];
+      else img.replaceWith(document.createTextNode("")); // absolute last resort: blank
     };
 
-    img.src = webp;
+    img.src = candidates[idx];
     return wrapEmojiNode(img);
   }
 
@@ -368,7 +388,7 @@
         for (const { segment } of graphemes.segment(text)) {
           const isEmojiSeg = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
           if (isEmojiSeg) {
-            frag.appendChild(makeNotoAnimatedEmoji(segment));
+            frag.appendChild(makeNotoEmojiBox(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -376,23 +396,16 @@
         }
         if (!changed) return;
       } else {
-        let emojiSeq;
-        try {
-          emojiSeq = new RegExp(
-            "\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?(?:\\u200D\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?)*",
-            "gu",
-          );
-        } catch {
-          emojiSeq =
-            /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?)*/g;
-        }
+        // fallback regex
+        const emojiSeq =
+          /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?)*/g;
 
         let last = 0;
         let m;
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeNotoAnimatedEmoji(m[0]));
+          frag.appendChild(makeNotoEmojiBox(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -403,22 +416,23 @@
     });
   }
 
-  // ✅ HARD FORCE: px sizing + baseline offset (stops “stuck to top”)
-  function forceEmojiLayout(container) {
-    const rootLine = container.closest(".line") || container;
-    const fontPx = parseFloat(getComputedStyle(rootLine).fontSize) || 36;
+  // ✅ HARD FORCE: stop “top stuck” AND stop “narrow”
+  // Make every emoji image a SQUARE with explicit px width/height,
+  // and push the wrapper DOWN by a px baseline offset.
+  function forceEmojiLayoutPx(container) {
+    const line = container.closest(".line") || container;
+    const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
 
-    // Tuning (these are the actual "force it" numbers)
-    const boxTopPx = Math.round(fontPx * 0.18);     // push box down
-    const imgSizePx = Math.round(fontPx * 1.08);    // emoji size
-    const imgNudgePx = Math.round(fontPx * 0.02);   // extra nudge
+    const boxTopPx = Math.round(fontPx * 0.22);    // push down (fix top-stuck)
+    const sizePx = Math.round(fontPx * 1.12);      // emoji size
+    const boxH = Math.round(fontPx * 1.00);        // wrapper height
 
     const boxes = container.querySelectorAll(".emoji-box");
     boxes.forEach((box) => {
       box.style.setProperty("display", "inline-flex", "important");
       box.style.setProperty("align-items", "flex-end", "important");
       box.style.setProperty("justify-content", "center", "important");
-      box.style.setProperty("height", `${fontPx}px`, "important");
+      box.style.setProperty("height", `${boxH}px`, "important");
       box.style.setProperty("line-height", "1", "important");
       box.style.setProperty("vertical-align", "baseline", "important");
       box.style.setProperty("position", "relative", "important");
@@ -426,10 +440,11 @@
 
       const img = box.querySelector("img");
       if (img) {
-        img.style.setProperty("height", `${imgSizePx}px`, "important");
-        img.style.setProperty("width", "auto", "important");
+        // THE “NOT NARROW” FIX: force square
+        img.style.setProperty("width", `${sizePx}px`, "important");
+        img.style.setProperty("height", `${sizePx}px`, "important");
+        img.style.setProperty("object-fit", "contain", "important");
         img.style.setProperty("display", "block", "important");
-        img.style.setProperty("transform", `translateY(${imgNudgePx}px)`, "important");
       }
     });
   }
