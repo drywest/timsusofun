@@ -41,10 +41,10 @@
   // ===== end periodic elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
-  const HYPE_THRESHOLD = 500;
-  const HYPE_DURATION_MS = 8000;
-  const HYPE_COOLDOWN_MS = 30 * 60 * 1000;
-  const SPEED_WINDOW_MS = 60000;
+  const HYPE_THRESHOLD = 500; // msgs per minute
+  const HYPE_DURATION_MS = 8000; // ~8s visible
+  const HYPE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+  const SPEED_WINDOW_MS = 60000; // rolling 60s window
 
   const hypeEl = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
@@ -54,6 +54,7 @@
   let lastHypeAt = 0;
   let hypeReady = false;
 
+  // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
     const override = params.get("hype");
     const dirPath = (function () {
@@ -94,10 +95,8 @@
   function recordMessages(count) {
     const now = Date.now();
     for (let i = 0; i < count; i++) arrivalTimes.push(now);
-
     const cutoff = now - SPEED_WINDOW_MS;
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
-
     const perMinute = arrivalTimes.length;
     if (perMinute > HYPE_THRESHOLD) triggerHype(now);
   }
@@ -151,7 +150,9 @@
   }
 
   function isBot(name) {
-    const n = String(name || "").toLowerCase().replace(/\s+/g, "");
+    const n = String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, "");
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
 
@@ -204,6 +205,7 @@
     for (const payload of items) {
       const { author, html, type } = payload || {};
       if (type !== "system" && isBot(author)) continue;
+
       if (type !== "system") nonSystemCount++;
 
       const line = buildLine(
@@ -226,7 +228,6 @@
 
     stack.appendChild(fragment);
 
-    // push-up
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
@@ -275,8 +276,8 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);  // YouTube emoji <img>
-    normalizeUnicodeEmoji(m); // Unicode emoji <span>
+    normalizeEmojiImages(m);   // YouTube emoji <img>
+    normalizeUnicodeEmoji(m);  // Unicode emoji -> Twemoji <img>
 
     line.appendChild(a);
     line.appendChild(m);
@@ -298,6 +299,7 @@
     return img;
   }
 
+  // YouTube custom emoji images
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
@@ -320,48 +322,72 @@
     });
   }
 
-  // ✅ FIX: Unicode emoji styling + grapheme-safe wrapping
-  function normalizeUnicodeEmoji(container) {
-    const seg =
-      typeof Intl !== "undefined" && Intl.Segmenter
-        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-        : null;
+  // ===== Unicode emoji -> Twemoji SVG images (this fixes your "stuck to top" forever) =====
+  const TWEMOJI_BASE = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
 
-    let isEmoji = null;
-    try {
-      const re = /\p{Extended_Pictographic}/u;
-      isEmoji = (s) => re.test(s);
-    } catch {
-      const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-      isEmoji = (s) => fallback.test(s);
+  function toCodePointSequence(str) {
+    const cps = [];
+    for (let i = 0; i < str.length; i++) {
+      const cp = str.codePointAt(i);
+      cps.push(cp.toString(16));
+      if (cp > 0xffff) i++;
     }
+    return cps.join("-");
+  }
 
+  // Segmenter keeps ZWJ sequences together (family emojis, etc.)
+  const graphemes =
+    typeof Intl !== "undefined" && Intl.Segmenter
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
+
+  let isEmoji = null;
+  try {
+    const re = /\p{Extended_Pictographic}/u;
+    isEmoji = (s) => re.test(s);
+  } catch {
+    const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
+    isEmoji = (s) => fallback.test(s);
+  }
+
+  function makeTwemojiImg(emojiText) {
+    const img = document.createElement("img");
+    img.className = "emoji-unicode";
+    img.alt = emojiText;
+    img.decoding = "async";
+    img.loading = "eager";
+    img.referrerPolicy = "no-referrer";
+    img.crossOrigin = "anonymous";
+
+    // Build URL like: 1f480.svg etc
+    const code = toCodePointSequence(emojiText);
+    img.src = TWEMOJI_BASE + code + ".svg";
+
+    // If CDN fails, fall back to the raw emoji text
+    img.onerror = () => {
+      img.replaceWith(document.createTextNode(emojiText));
+    };
+
+    return img;
+  }
+
+  function normalizeUnicodeEmoji(container) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
-    function makeEmojiSpan(txt) {
-      const span = document.createElement("span");
-      span.className = "emoji-char";
-      span.textContent = txt;
-
-      // Inline = guaranteed fix even if CSS is cached/overridden
-      span.style.display = "inline-block";
-      span.style.fontSize = "1.15em";
-      span.style.lineHeight = "1";
-      span.style.fontWeight = "400";
-      span.style.verticalAlign = "-0.30em";
-      span.style.position = "relative";
-      span.style.top = "0.06em";
-      span.style.fontFamily =
-        '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,-apple-system,"Segoe UI",Arial,sans-serif';
-
-      return span;
+    // fallback matcher (if Segmenter missing)
+    let emojiSeq;
+    try {
+      emojiSeq = new RegExp(
+        "\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?(?:\\u200D\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?)*",
+        "gu",
+      );
+    } catch {
+      emojiSeq =
+        /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|[\uFE0E])?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|[\uFE0E])?)*/g;
     }
-
-    const fallbackEmojiSeq =
-      /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*?/g;
 
     nodes.forEach((node) => {
       const text = node.nodeValue;
@@ -372,11 +398,11 @@
 
       const frag = document.createDocumentFragment();
 
-      if (seg) {
+      if (graphemes) {
         let changed = false;
-        for (const { segment } of seg.segment(text)) {
+        for (const { segment } of graphemes.segment(text)) {
           if (isEmoji(segment)) {
-            frag.appendChild(makeEmojiSpan(segment));
+            frag.appendChild(makeTwemojiImg(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -385,12 +411,12 @@
         if (!changed) return;
       } else {
         let last = 0;
+        emojiSeq.lastIndex = 0;
         let m;
-        fallbackEmojiSeq.lastIndex = 0;
-        while ((m = fallbackEmojiSeq.exec(text))) {
+        while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeEmojiSpan(m[0]));
+          frag.appendChild(makeTwemojiImg(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -402,6 +428,16 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
+    return String(s).replace(
+      /[&<>"']/g,
+      (m) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[m],
+    );
   }
 })();
