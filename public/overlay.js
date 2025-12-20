@@ -2,28 +2,105 @@
 (function () {
   const stack = document.getElementById("stack");
 
-  // Tuning: ?fs=36&keep=600&hype=<url>
+  // Tuning: ?fs=36&keep=600&hype=<url>&cid=<channelId>
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
+
   document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
   if (keepParam) {
     document.documentElement.style.setProperty("--max-keep", parseInt(keepParam, 10));
   }
 
-  const channelId = decodeURIComponent(location.pathname.split("/").pop());
+  // ---- Robust channelId resolution ----
+  function looksLikeChannelId(s) {
+    // Typical YouTube channel IDs look like: UC + 22 chars = 24 total
+    // Allow - and _ as well.
+    return typeof s === "string" && /^UC[a-zA-Z0-9_-]{22}$/.test(s);
+  }
 
-  // WebSocket to our server
+  function getChannelId() {
+    // 1) Prefer query param
+    const q1 = params.get("cid");
+    const q2 = params.get("channelId");
+    const q = q1 || q2;
+    if (q) return decodeURIComponent(q);
+
+    // 2) Otherwise scan path segments for a UC... id
+    const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+
+    // Remove common filenames if present
+    const filtered = segs.filter((s) => !/\.html?$/.test(s) && s !== "overlay" && s !== "chat");
+
+    // Find first segment that matches channel ID pattern
+    for (const s of filtered) {
+      if (looksLikeChannelId(s)) return s;
+    }
+
+    // 3) Fallback to last segment ONLY if it matches
+    const last = filtered[filtered.length - 1];
+    if (looksLikeChannelId(last)) return last;
+
+    return null;
+  }
+
+  const channelId = getChannelId();
+
+  if (!channelId || !looksLikeChannelId(channelId)) {
+    console.error(
+      "[overlay] Missing/invalid channelId. Use a link like:\n" +
+        "  https://YOURDOMAIN/<CHANNEL_ID>\n" +
+        "or\n" +
+        "  https://YOURDOMAIN/overlay.html?cid=<CHANNEL_ID>\n\n" +
+        "Expected format: UCxxxxxxxxxxxxxxxxxxxxxx (24 chars total).",
+      { pathname: location.pathname, search: location.search },
+    );
+    return; // don't connect with a bad cid
+  }
+
+  console.log("[overlay] channelId =", channelId);
+
+  // ---- WebSocket connect/reconnect ----
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBase = wsProtocol + "//" + location.host;
-  const ws = new WebSocket(wsBase + "/ws?cid=" + encodeURIComponent(channelId));
 
-  ws.addEventListener("open", () => console.log("[overlay] WS open"));
-  ws.addEventListener("close", () => {
-    console.log("[overlay] WS closed, retry in 5s");
-    setTimeout(() => location.reload(), 5000);
-  });
-  ws.addEventListener("error", (e) => console.error("[overlay] WS error:", e));
+  let ws = null;
+  let reconnectAttempts = 0;
+  let reconnectTimer = null;
+
+  function connectWS() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    ws = new WebSocket(wsBase + "/ws?cid=" + encodeURIComponent(channelId));
+
+    ws.addEventListener("open", () => {
+      reconnectAttempts = 0;
+      console.log("[overlay] WS open");
+    });
+
+    ws.addEventListener("close", (ev) => {
+      console.log("[overlay] WS closed", {
+        code: ev.code,
+        reason: ev.reason,
+        wasClean: ev.wasClean,
+      });
+
+      // Exponential backoff (max ~10s)
+      reconnectAttempts++;
+      const delay = Math.min(10000, 500 * Math.pow(1.6, reconnectAttempts));
+      reconnectTimer = setTimeout(connectWS, delay);
+    });
+
+    ws.addEventListener("error", (e) => {
+      console.error("[overlay] WS error:", e);
+      // allow close handler to reconnect
+    });
+
+    ws.addEventListener("message", onWSMessage);
+  }
 
   // ===== Elephant sound every 15 minutes (after interaction) =====
   const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
@@ -71,8 +148,9 @@
   let hypeReady = false;
 
   (function resolveHypeGif() {
-    const override = params.get("hype");
+    if (!hypeEl || !hypeImg) return;
 
+    const override = params.get("hype");
     const dirPath = (function () {
       const p = window.location.pathname;
       const idx = p.lastIndexOf("/");
@@ -92,15 +170,12 @@
       const src = candidates[idx++];
       const img = new Image();
       img.onload = () => {
-        if (hypeImg) hypeImg.src = src;
+        hypeImg.src = src;
         hypeReady = true;
       };
       img.onerror = () => tryNext();
       img.src = src;
     }
-
-    // If there's no hype container/image, just don't do hype
-    if (!hypeEl || !hypeImg) return;
     tryNext();
   })();
 
@@ -118,8 +193,7 @@
   }
 
   function triggerHypeGif(now) {
-    if (!hypeEl) return;
-    if (!hypeReady) return;
+    if (!hypeEl || !hypeReady) return;
 
     lastHypeAt = now;
     if (hypeVisible) return;
@@ -169,7 +243,6 @@
   }
 
   // ========= Emoji normalization (FIX) =========
-
   const graphemeSegmenter =
     typeof Intl !== "undefined" && Intl.Segmenter
       ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -219,9 +292,7 @@
           const t = node.nodeValue;
           if (!t || !t.trim()) return NodeFilter.FILTER_REJECT;
 
-          // quick pre-check
           if (!isEmojiSegment(t)) return NodeFilter.FILTER_REJECT;
-
           return NodeFilter.FILTER_ACCEPT;
         },
       },
@@ -304,7 +375,7 @@
     return line;
   }
 
-  ws.addEventListener("message", (ev) => {
+  function onWSMessage(ev) {
     let data;
     try {
       data = JSON.parse(ev.data);
@@ -323,9 +394,9 @@
         !!item.isMember,
         item.memberBadges || [],
       );
+
       stack.appendChild(line);
 
-      // animate push-up
       const children = Array.from(stack.children);
       if (children.length > 1) {
         const shift = line.getBoundingClientRect().height + 10;
@@ -341,6 +412,10 @@
 
     const maxKeep =
       parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
+
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
-  });
+  }
+
+  // Start WS
+  connectWS();
 })();
