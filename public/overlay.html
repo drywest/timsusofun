@@ -16,7 +16,6 @@
         padding: 0;
         height: 100%;
         background: transparent;
-        /* prevent scrollbars from overlay animations */
         overflow: hidden;
       }
 
@@ -37,17 +36,11 @@
 
       :root {
         --line-gap: 10px;
-
-        /* slightly smaller so more messages fit */
-        --font-size: 32px;
-
+        --font-size: 36px;
         --shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
         --enter-ms: 40ms;
         --push-ms: 140ms;
-
-        /* unified emoji size */
         --emoji-size: 1.15em;
-
         --max-keep: 400;
       }
 
@@ -67,15 +60,13 @@
       .line {
         display: block;
         font-size: var(--font-size);
-        line-height: 1.18; /* slightly taller to fit emoji comfortably */
+        line-height: 1.18;
         font-weight: 900;
         letter-spacing: 0.2px;
         color: #fff !important;
         text-shadow: var(--shadow);
         white-space: normal;
         word-break: break-word;
-
-        /* more saturation / pop */
         filter: saturate(1.35);
 
         opacity: 0;
@@ -127,13 +118,12 @@
       .emoji-char {
         display: inline-block;
         font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
-        font-weight: 400; /* critical: prevents “thin” look from inherited heavy weight */
+        font-weight: 400;
         font-size: var(--emoji-size);
         line-height: 1;
         vertical-align: -0.18em;
       }
 
-      /* ===== Hype GIF overlay (kept for compatibility) ===== */
       #hype {
         position: absolute;
         inset: 0;
@@ -162,14 +152,11 @@
   <body>
     <div id="stack" class="stack"></div>
 
-    <!-- optional hype overlay -->
     <div id="hype">
-      <img src="pepe.gif" alt="hype" />
+      <img id="hype-img" src="/pepe.gif" alt="hype" />
     </div>
 
-    <!-- If your overlay.js uses socket.io, keep this. If not, harmless. -->
-    <script src="/socket.io/socket.io.js"></script>
-
-    <script src="./overlay.js"></script>
+    <!-- IMPORTANT: absolute path so /<channelId> routes don't break it -->
+    <script src="/overlay.js"></script>
   </body>
 </html>
