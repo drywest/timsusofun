@@ -14,9 +14,9 @@
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   const WS_URL = `${scheme}://${location.host}/ws?channelId=${encodeURIComponent(channelId)}`;
 
-  // Owner/Mod badge assets (use root paths; your server should serve /badges/*)
-  const OWNER_IMG = "/badges/owner.png";
-  const MOD_IMG = "/badges/mod.gif";
+  // Owner/Mod badge assets
+  const OWNER_IMG = "/public/badges/owner.png";
+  const MOD_IMG = "/public/badges/mod.gif";
 
   // ===== Periodic elephant sound (every 15 minutes) =====
   const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
@@ -28,12 +28,15 @@
       elephantAudio.currentTime = 0;
       const p = elephantAudio.play();
       if (p && typeof p.catch === "function") {
-        p.catch((err) => console.warn("[overlay] elephant.mp3 play blocked or failed:", err));
+        p.catch((err) => {
+          console.warn("[overlay] elephant.mp3 play blocked or failed:", err);
+        });
       }
     } catch (err) {
       console.warn("[overlay] elephant.mp3 play error:", err);
     }
   }
+
   setInterval(playElephant, ELEPHANT_INTERVAL_MS);
   // ===== end periodic elephant sound =====
 
@@ -52,8 +55,6 @@
   let hypeReady = false;
 
   (function resolveHypeGif() {
-    if (!hypeImg) return;
-
     const override = params.get("hype");
     const dirPath = (function () {
       const p = window.location.pathname;
@@ -65,8 +66,11 @@
       ? [decodeURIComponent(override)]
       : [
           "/pepe.gif",
+          "/public/pepe.gif",
           "pepe.gif",
+          "public/pepe.gif",
           `${dirPath.replace(/\/$/, "")}/pepe.gif`,
+          `${dirPath.replace(/\/$/, "")}/public/pepe.gif`,
         ];
 
     let i = 0;
@@ -107,12 +111,12 @@
     if (hypeVisible) return;
 
     hypeVisible = true;
-    if (hypeEl) hypeEl.classList.add("show");
+    hypeEl.classList.add("show");
 
     if (hypeTimer) clearTimeout(hypeTimer);
     hypeTimer = setTimeout(() => {
       hypeVisible = false;
-      if (hypeEl) hypeEl.classList.remove("show");
+      hypeEl.classList.remove("show");
       hypeTimer = null;
     }, HYPE_DURATION_MS);
   }
@@ -139,7 +143,8 @@
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
-    for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+    for (let i = 0; i < name.length; i++)
+      h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
     const c = palette[Math.abs(h) % palette.length];
     colorCache.set(name, c);
     return c;
@@ -215,8 +220,8 @@
       fragment.appendChild(line);
       newLines.push(line);
     }
-
     if (!newLines.length) return;
+
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
@@ -270,8 +275,8 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);   // YouTube emoji <img>
-    normalizeUnicodeEmoji(m);  // Native emoji -> fixed spans
+    normalizeEmojiImages(m);  // YouTube emoji <img>
+    normalizeUnicodeEmoji(m); // Unicode emoji <span>
 
     line.appendChild(a);
     line.appendChild(m);
@@ -303,10 +308,7 @@
 
       const newImg = document.createElement("img");
       newImg.alt = alt;
-      newImg.className = "emoji emoji-img";
-      newImg.style.height = "1em";
-      newImg.style.width = "auto";
-      newImg.style.verticalAlign = "-0.18em";
+      newImg.className = "emoji-img";
       newImg.decoding = "async";
       newImg.loading = "eager";
       newImg.referrerPolicy = "no-referrer";
@@ -318,7 +320,7 @@
     });
   }
 
-  // ✅ FIX: Unicode emoji gets its own span + inline styling so it NEVER renders tiny/top-aligned
+  // ✅ FIX: Unicode emoji styling + grapheme-safe wrapping
   function normalizeUnicodeEmoji(container) {
     const seg =
       typeof Intl !== "undefined" && Intl.Segmenter
@@ -334,65 +336,57 @@
       isEmoji = (s) => fallback.test(s);
     }
 
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const t = node.nodeValue;
-          if (!t || !t.trim()) return NodeFilter.FILTER_REJECT;
-
-          const p = node.parentNode;
-          if (p && p.closest && p.closest(".emoji-char")) return NodeFilter.FILTER_REJECT;
-
-          // quick skip
-          if (!isEmoji(t)) return NodeFilter.FILTER_REJECT;
-
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      },
-      false,
-    );
-
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
-
-    const fallbackEmojiSeq =
-      /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*?/g;
 
     function makeEmojiSpan(txt) {
       const span = document.createElement("span");
       span.className = "emoji-char";
       span.textContent = txt;
 
-      // Inline styles = guaranteed fix (even if CSS cached/overridden in OBS)
+      // Inline = guaranteed fix even if CSS is cached/overridden
       span.style.display = "inline-block";
-      span.style.fontSize = "1.05em";
+      span.style.fontSize = "1.15em";
       span.style.lineHeight = "1";
-      span.style.verticalAlign = "-0.18em";
       span.style.fontWeight = "400";
+      span.style.verticalAlign = "-0.30em";
+      span.style.position = "relative";
+      span.style.top = "0.06em";
       span.style.fontFamily =
         '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,-apple-system,"Segoe UI",Arial,sans-serif';
 
       return span;
     }
 
+    const fallbackEmojiSeq =
+      /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*?/g;
+
     nodes.forEach((node) => {
       const text = node.nodeValue;
-      if (!text) return;
+      if (!text || !text.trim()) return;
+
+      // quick skip
+      if (!isEmoji(text) && !/[\u200D\uFE0F]/.test(text)) return;
 
       const frag = document.createDocumentFragment();
 
       if (seg) {
+        let changed = false;
         for (const { segment } of seg.segment(text)) {
-          if (isEmoji(segment)) frag.appendChild(makeEmojiSpan(segment));
-          else frag.appendChild(document.createTextNode(segment));
+          if (isEmoji(segment)) {
+            frag.appendChild(makeEmojiSpan(segment));
+            changed = true;
+          } else {
+            frag.appendChild(document.createTextNode(segment));
+          }
         }
+        if (!changed) return;
       } else {
-        // fallback
         let last = 0;
         let m;
+        fallbackEmojiSeq.lastIndex = 0;
         while ((m = fallbackEmojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
