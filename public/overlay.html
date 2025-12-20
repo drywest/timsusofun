@@ -25,6 +25,10 @@
         --max-keep: 600;
         --enter-ms: 90ms;
         --push-ms: 140ms;
+
+        /* Emoji tuning */
+        --emoji-size: 1.25em;     /* size relative to text */
+        --emoji-baseline: 0.18em; /* push DOWN to align with text */
       }
 
       body {
@@ -49,7 +53,10 @@
         line-height: 1.25;
         font-weight: 900;
         color: #fff;
-        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
+
+        /* ✅ removed drop shadow */
+        text-shadow: none;
+
         word-break: break-word;
 
         opacity: 0;
@@ -82,35 +89,22 @@
         margin-right: 0.18em;
       }
 
-      /* ===========================
-         EMOJI: HARD FORCE LAYOUT
-         =========================== */
-
-      /* The wrapper that forces baseline alignment */
+      /* ===== Emoji: forced layout ===== */
       .emoji-box {
         display: inline-flex !important;
         align-items: flex-end !important;
         justify-content: center !important;
-
-        /* fixed inline box height so it matches the line */
         height: 1em !important;
         line-height: 1 !important;
-
-        /* baseline alignment (then we nudge via top) */
         vertical-align: baseline !important;
-
         position: relative !important;
-        top: 0.16em !important; /* FORCE DOWN so it can't stick to top */
+        top: var(--emoji-baseline) !important;
       }
 
-      /* The actual emoji image */
       .emoji-box > img {
-        height: 1.2em !important;
-        width: 1.2em !important;
+        height: var(--emoji-size) !important;
+        width: auto !important;
         display: block !important;
-
-        /* extra nudge if OBS font metrics are weird */
-        transform: translateY(0.02em) !important;
       }
 
       /* ===== Hype GIF ===== */
