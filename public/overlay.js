@@ -8,7 +8,10 @@
   const keepParam = params.get("keep");
   document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
   if (keepParam)
-    document.documentElement.style.setProperty("--max-keep", parseInt(keepParam, 10));
+    document.documentElement.style.setProperty(
+      "--max-keep",
+      parseInt(keepParam, 10),
+    );
 
   const channelId = decodeURIComponent(location.pathname.split("/").pop());
 
@@ -57,18 +60,18 @@
   // ===== end periodic elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
-  const HYPE_THRESHOLD = 500; // msgs per minute
-  const HYPE_DURATION_MS = 8000; // ~8s visible
-  const HYPE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
-  const SPEED_WINDOW_MS = 60000; // rolling 60s window
+  const HYPE_THRESHOLD     = 500;            // msgs per minute
+  const HYPE_DURATION_MS   = 8000;           // ~8s visible
+  const HYPE_COOLDOWN_MS   = 30 * 60 * 1000; // 30 minutes
+  const SPEED_WINDOW_MS    = 60000;          // rolling 60s window
 
-  const hypeEl = document.getElementById("hype");
+  const hypeEl  = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
   const arrivalTimes = [];
-  let hypeTimer = null;
-  let hypeVisible = false;
-  let lastHypeAt = 0;
-  let hypeReady = false;
+  let hypeTimer    = null;
+  let hypeVisible  = false;
+  let lastHypeAt   = 0;
+  let hypeReady    = false;
 
   // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
@@ -81,7 +84,11 @@
 
     const candidates = override
       ? [decodeURIComponent(override)]
-      : ["/pepe.gif", "pepe.gif", dirPath.replace(/\/+$/, "") + "/pepe.gif"];
+      : [
+          "/pepe.gif",
+          "pepe.gif",
+          dirPath.replace(/\/+$/, "") + "/pepe.gif",
+        ];
 
     let idx = 0;
     function tryNext() {
@@ -110,7 +117,10 @@
       arrivalTimes.shift();
     }
     const ratePerMin = (arrivalTimes.length * 60000) / SPEED_WINDOW_MS;
-    if (ratePerMin >= HYPE_THRESHOLD && now - lastHypeAt > HYPE_COOLDOWN_MS) {
+    if (
+      ratePerMin >= HYPE_THRESHOLD &&
+      now - lastHypeAt > HYPE_COOLDOWN_MS
+    ) {
       triggerHypeGif(now);
     }
   }
@@ -150,14 +160,15 @@
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
-    for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+    for (let i = 0; i < name.length; i++)
+      h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
     const c = palette[Math.abs(h) % palette.length];
     colorCache.set(name, c);
     return c;
   }
 
   const OWNER_IMG = "/badges/owner.png";
-  const MOD_IMG = "/badges/mod.gif";
+  const MOD_IMG   = "/badges/mod.gif";
 
   function makeBadgeImg(src, alt) {
     const img = document.createElement("img");
@@ -176,12 +187,14 @@
 
     // Badges BEFORE username: owner → mod → membership (primary)
     if (isOwner) a.appendChild(makeBadgeImg(OWNER_IMG, "owner"));
-    if (isMod) a.appendChild(makeBadgeImg(MOD_IMG, "mod"));
+    if (isMod)   a.appendChild(makeBadgeImg(MOD_IMG,  "mod"));
     if (isMember && memberBadges && memberBadges.length) {
       a.appendChild(makeBadgeImg(memberBadges[0], "member"));
     }
 
-    a.appendChild(document.createTextNode((author || "User").toUpperCase() + ": "));
+    a.appendChild(
+      document.createTextNode((author || "User").toUpperCase() + ": "),
+    );
 
     const m = document.createElement("span");
     m.className = "message";
@@ -189,7 +202,7 @@
 
     // Normalize any emoji images inside message span
     normalizeEmojiImages(m);
-    // Fix native Unicode emoji like 😉
+    // Normalize native Unicode emoji to span.emoji-emoji-char
     normalizeUnicodeEmoji(m);
 
     line.appendChild(a);
@@ -203,19 +216,20 @@
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
     candidates.forEach((oldImg) => {
-      const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
+      const src =
+        oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
       const alt = oldImg.getAttribute("alt") || ":emoji:";
       const newImg = document.createElement("img");
       newImg.alt = alt;
       newImg.className = "emoji";
       // Bigger + properly aligned to match text height
       newImg.style.height = "1.35em";
-      newImg.style.width = "auto";
+      newImg.style.width  = "auto";
       newImg.style.verticalAlign = "-0.25em";
       newImg.decoding = "async";
-      newImg.loading = "eager";
+      newImg.loading  = "eager";
       newImg.referrerPolicy = "no-referrer";
-      newImg.crossOrigin = "anonymous";
+      newImg.crossOrigin   = "anonymous";
       newImg.onerror = () => {
         const span = document.createElement("span");
         span.textContent = alt;
@@ -226,79 +240,46 @@
     });
   }
 
-  // Wrap native Unicode emoji so they visually match text height (FIXED)
+  // Wrap native Unicode emoji so they visually match text height
   function normalizeUnicodeEmoji(container) {
-    // Use grapheme segmentation when available (keeps emoji intact)
-    const seg =
-      typeof Intl !== "undefined" && Intl.Segmenter
-        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-        : null;
-
-    // Emoji detector (best effort)
-    let isEmoji = null;
-    try {
-      const re = /\p{Extended_Pictographic}/u;
-      isEmoji = (s) => re.test(s);
-    } catch {
-      const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-      isEmoji = (s) => fallback.test(s);
-    }
-
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    const walker = document.createTreeWalker(
+      container,
+      NodeFilter.SHOW_TEXT,
+      null,
+    );
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
 
-    // Fallback matcher if Segmenter missing
+    // Simple, safe emoji surrogate/BMP range matcher
     const emojiSeq = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/g;
-
-    function makeEmojiSpan(txt) {
-      const span = document.createElement("span");
-      span.className = "emoji emoji-char";
-      span.textContent = txt;
-
-      // IMPORTANT: fixes “thin/small/top stuck”
-      span.style.display = "inline-block";
-      span.style.fontSize = "1.15em";
-      span.style.lineHeight = "1";
-      span.style.verticalAlign = "-0.22em";
-      span.style.fontWeight = "400";
-      span.style.fontFamily =
-        '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
-
-      return span;
-    }
 
     nodes.forEach((node) => {
       const text = node.nodeValue;
       if (!text) return;
 
-      // Quick skip
-      if (!isEmoji(text)) return;
+      emojiSeq.lastIndex = 0;
+      if (!emojiSeq.test(text)) return;
+      emojiSeq.lastIndex = 0;
 
       const frag = document.createDocumentFragment();
-
-      if (seg) {
-        for (const { segment } of seg.segment(text)) {
-          if (isEmoji(segment)) frag.appendChild(makeEmojiSpan(segment));
-          else frag.appendChild(document.createTextNode(segment));
+      let last = 0;
+      let match;
+      while ((match = emojiSeq.exec(text))) {
+        const idx = match.index;
+        if (idx > last) {
+          frag.appendChild(document.createTextNode(text.slice(last, idx)));
         }
-      } else {
-        emojiSeq.lastIndex = 0;
-        if (!emojiSeq.test(text)) return;
-        emojiSeq.lastIndex = 0;
-
-        let last = 0;
-        let match;
-        while ((match = emojiSeq.exec(text))) {
-          const idx = match.index;
-          if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeEmojiSpan(match[0]));
-          last = idx + match[0].length;
-        }
-        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        const span = document.createElement("span");
+        span.className = "emoji emoji-char";
+        span.textContent = match[0];
+        frag.appendChild(span);
+        last = idx + match[0].length;
       }
-
+      if (last === 0) return;
+      if (last < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(last)));
+      }
       node.parentNode.replaceChild(frag, node);
     });
   }
@@ -343,7 +324,11 @@
     }
 
     const maxKeep =
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
+      parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue(
+          "--max-keep",
+        ),
+      ) || 600;
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
   });
 })();
