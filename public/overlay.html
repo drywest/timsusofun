@@ -50,7 +50,6 @@
         font-weight: 900;
         color: #fff;
 
-        /* ✅ shadow back */
         -webkit-text-stroke: 0;
         text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55), 0 10px 24px rgba(0, 0, 0, 0.30);
 
@@ -86,12 +85,10 @@
 
       /* Emoji wrapper (JS hard-forces px sizing too) */
       .emoji-box {
-        display: inline-flex;
-        align-items: flex-end;
-        justify-content: center;
-        vertical-align: baseline;
+        display: inline-block;
         position: relative;
         line-height: 1;
+        vertical-align: baseline;
       }
       .emoji-box img {
         display: block;
