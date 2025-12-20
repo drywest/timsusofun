@@ -2,7 +2,7 @@
 (function () {
   const stack = document.getElementById("stack");
 
-  // Tuning: ?fs=36&keep=600&hype=<url>
+  // Tuning: ?fs=36&keep=600&hype=<url>&emojiStyle=apple|google|twitter|facebook
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
@@ -176,322 +176,108 @@
   connect();
 
   // =========================
-  // Animated emoji index + matching
+  // EMOJI.ARANJA.COM conversion (emoji -> PNG)
   // =========================
+  const ARANJA_BASE = "https://emoji.aranja.com/emojis";
+  const ARANJA_STYLE = (params.get("emojiStyle") || "apple").toLowerCase();
+  const ARANJA_STYLE_SAFE = ["apple", "google", "twitter", "facebook"].includes(ARANJA_STYLE)
+    ? ARANJA_STYLE
+    : "apple";
 
-  const NOTO_API_URL = "https://googlefonts.github.io/noto-emoji-animation/data/api.json";
-  const EMOJI_ORDERING_URL =
-    "https://raw.githubusercontent.com/googlefonts/emoji-metadata/main/emoji_17_0_ordering.json";
-
-  const LS_API_KEY = "timsu_noto_anim_api_v1";
-  const LS_API_TS = "timsu_noto_anim_api_ts_v1";
-  const LS_META_KEY = "timsu_emoji_meta_v1";
-  const LS_META_TS = "timsu_emoji_meta_ts_v1";
-  const CACHE_MS = 7 * 24 * 60 * 60 * 1000;
-
-  const animEmojiToCode = new Map(); // emoji string -> codepoint folder
-  const animTagToCode = new Map(); // ":tag:" -> codepoint folder
-  const animEntries = []; // { code, tags:Set<string>, primaryTag:string }
-
-  const emojiToShortcodes = new Map(); // emoji string -> [":x:", ...]
-  const shortcodeToEmoji = new Map(); // ":x:" -> emoji string
-
-  let animReady = false;
-  let metaReady = false;
-
-  function nowMs() {
-    return Date.now();
+  let hasPictographic = null;
+  try {
+    const re = /\p{Extended_Pictographic}/u;
+    hasPictographic = (s) => re.test(s);
+  } catch {
+    const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
+    hasPictographic = (s) => fallback.test(s);
   }
 
-  function safeJsonParse(s) {
-    try {
-      return JSON.parse(s);
-    } catch {
-      return null;
-    }
-  }
+  const graphemes =
+    typeof Intl !== "undefined" && Intl.Segmenter
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
 
-  function setLS(k, v) {
-    try {
-      localStorage.setItem(k, v);
-    } catch {}
-  }
-  function getLS(k) {
-    try {
-      return localStorage.getItem(k);
-    } catch {
-      return null;
-    }
-  }
-
-  function isFresh(tsKey) {
-    const ts = parseInt(getLS(tsKey) || "0", 10);
-    return ts && nowMs() - ts < CACHE_MS;
-  }
-
-  function splitCodeToHexParts(code) {
-    // supports: "1f602", "u1f602", "emoji_u1f602", "1f469_200d_2764_fe0f_200d_1f48b_200d_1f468"
-    let s = String(code || "");
-    s = s.replace(/^emoji_/, "");
-    s = s.replace(/^u/, "");
-    const parts = s.split(/[_-]/g).filter(Boolean).map((p) => p.replace(/^u/, ""));
-    return parts;
-  }
-
-  function hexPartsToEmoji(parts) {
-    try {
-      const cps = parts.map((h) => parseInt(h, 16)).filter((n) => Number.isFinite(n));
-      if (!cps.length) return "";
-      return String.fromCodePoint(...cps);
-    } catch {
-      return "";
-    }
-  }
-
-  function normalizeTag(t) {
-    let s = String(t || "").trim().toLowerCase();
-    if (!s) return "";
-    s = s.replace(/\s+/g, "_").replace(/-+/g, "_");
-    s = s.replace(/^:+|:+$/g, "");
-    return `:${s}:`;
-  }
-
-  function tagTokens(tag) {
-    const t = normalizeTag(tag);
-    if (!t) return [];
-    const core = t.slice(1, -1);
-    return core.split(/[_\s-]+/g).filter(Boolean);
-  }
-
-  function tokensFromTerm(term) {
-    let s = String(term || "").trim().toLowerCase();
-    s = s.replace(/^:+|:+$/g, "");
-    s = s.replace(/[^a-z0-9_ -]+/g, " ");
-    s = s.replace(/\s+/g, " ").trim();
-    if (!s) return [];
-    return s.split(/[_\s-]+/g).filter(Boolean);
-  }
-
-  function jaccard(aSet, bSet) {
-    let inter = 0;
-    for (const x of aSet) if (bSet.has(x)) inter++;
-    const union = aSet.size + bSet.size - inter;
-    return union ? inter / union : 0;
-  }
-
-  async function fetchJsonWithCache(url, lsKey, tsKey) {
-    if (isFresh(tsKey)) {
-      const cached = getLS(lsKey);
-      const parsed = cached ? safeJsonParse(cached) : null;
-      if (parsed) return parsed;
-    }
-    const res = await fetch(url, { cache: "no-store", mode: "cors" });
-    const data = await res.json();
-    setLS(lsKey, JSON.stringify(data));
-    setLS(tsKey, String(nowMs()));
-    return data;
-  }
-
-  async function loadAnimIndex() {
-    try {
-      const data = await fetchJsonWithCache(NOTO_API_URL, LS_API_KEY, LS_API_TS);
-      const icons = Array.isArray(data && data.icons) ? data.icons : [];
-      animEmojiToCode.clear();
-      animTagToCode.clear();
-      animEntries.length = 0;
-
-      for (const icon of icons) {
-        const code = String(icon && icon.codepoint ? icon.codepoint : "").trim();
-        if (!code) continue;
-
-        const parts = splitCodeToHexParts(code);
-        const emoji = hexPartsToEmoji(parts);
-        if (emoji) animEmojiToCode.set(emoji, parts.join("_"));
-
-        const tagsArr = Array.isArray(icon && icon.tags) ? icon.tags : [];
-        const tagSet = new Set();
-        let primary = "";
-
-        for (let i = 0; i < tagsArr.length; i++) {
-          const t = normalizeTag(tagsArr[i]);
-          if (!t) continue;
-          tagSet.add(t);
-          if (!primary) primary = t;
-          if (!animTagToCode.has(t)) animTagToCode.set(t, parts.join("_"));
-        }
-
-        // also add plain tokenized variants for matching
-        const tokenSet = new Set();
-        for (const t of tagSet) for (const tok of tagTokens(t)) tokenSet.add(tok);
-
-        animEntries.push({
-          code: parts.join("_"),
-          emoji,
-          tags: tagSet,
-          tokens: tokenSet,
-          primaryTag: primary,
-        });
-      }
-
-      animReady = true;
-    } catch {
-      animReady = false;
-    }
-  }
-
-  function codepointsToEmojiFromInts(arr) {
-    try {
-      if (!Array.isArray(arr) || !arr.length) return "";
-      return String.fromCodePoint(...arr.map((n) => Number(n)));
-    } catch {
-      return "";
-    }
-  }
-
-  async function loadEmojiMetadata() {
-    try {
-      const data = await fetchJsonWithCache(EMOJI_ORDERING_URL, LS_META_KEY, LS_META_TS);
-      emojiToShortcodes.clear();
-      shortcodeToEmoji.clear();
-
-      const groups = Array.isArray(data) ? data : Array.isArray(data && data.groups) ? data.groups : [];
-      const allEmojiItems = [];
-
-      for (const g of groups) {
-        const list = Array.isArray(g && g.emoji) ? g.emoji : [];
-        for (const item of list) allEmojiItems.push(item);
-      }
-
-      for (const item of allEmojiItems) {
-        const base = codepointsToEmojiFromInts(item && item.base);
-        const shorts = Array.isArray(item && item.shortcodes) ? item.shortcodes : [];
-        const normShorts = shorts.map(normalizeTag).filter(Boolean);
-
-        if (base && normShorts.length) {
-          emojiToShortcodes.set(base, normShorts);
-          for (const sc of normShorts) if (!shortcodeToEmoji.has(sc)) shortcodeToEmoji.set(sc, base);
-        }
-
-        const alts = Array.isArray(item && item.alternates) ? item.alternates : [];
-        for (const altArr of alts) {
-          const altEmoji = codepointsToEmojiFromInts(altArr);
-          if (altEmoji && normShorts.length && !emojiToShortcodes.has(altEmoji)) {
-            emojiToShortcodes.set(altEmoji, normShorts);
-          }
-        }
-      }
-
-      metaReady = true;
-    } catch {
-      metaReady = false;
-    }
-  }
-
-  (async function initEmojiIndexes() {
-    // load both in parallel
-    await Promise.allSettled([loadAnimIndex(), loadEmojiMetadata()]);
-  })();
-
-  function stripVariationAndSkin(emojiText) {
+  function emojiCodepoints(emojiText) {
     const cps = [];
     for (let i = 0; i < emojiText.length; i++) {
       const cp = emojiText.codePointAt(i);
-      if (cp > 0xffff) i++;
-      // drop variation selectors
-      if (cp === 0xfe0f || cp === 0xfe0e) continue;
-      // drop skin tones
-      if (cp >= 0x1f3fb && cp <= 0x1f3ff) continue;
       cps.push(cp);
+      if (cp > 0xffff) i++;
     }
-    try {
-      return cps.length ? String.fromCodePoint(...cps) : emojiText;
-    } catch {
-      return emojiText;
+    return cps;
+  }
+
+  function stripVS(cps) {
+    return cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
+  }
+
+  function stripSkin(cps) {
+    return cps.filter((cp) => !(cp >= 0x1f3fb && cp <= 0x1f3ff));
+  }
+
+  function firstChunkBeforeZWJ(cps) {
+    const zwj = 0x200d;
+    const idx = cps.indexOf(zwj);
+    if (idx === -1) return cps;
+    return cps.slice(0, idx);
+  }
+
+  function hexNoPad(cp) {
+    return cp.toString(16).toLowerCase();
+  }
+
+  function hexPad(cp) {
+    const h = cp.toString(16).toLowerCase();
+    if (cp <= 0xffff) return h.padStart(4, "0");
+    return h;
+  }
+
+  function uniqArrays(arrays) {
+    const seen = new Set();
+    const out = [];
+    for (const a of arrays) {
+      const k = a.join(",");
+      if (!a.length) continue;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(a);
     }
+    return out;
   }
 
-  function firstChunkBeforeZWJ(emojiText) {
-    const zwj = "\u200d";
-    const idx = emojiText.indexOf(zwj);
-    if (idx === -1) return emojiText;
-    return emojiText.slice(0, idx);
-  }
+  function buildAranjaCandidates(emojiText) {
+    const cps0 = emojiCodepoints(emojiText);
 
-  function gstaticWebp(codeFolder) {
-    return `https://fonts.gstatic.com/s/e/notoemoji/latest/${codeFolder}/512.webp`;
-  }
-  function gstaticGif(codeFolder) {
-    return `https://fonts.gstatic.com/s/e/notoemoji/latest/${codeFolder}/512.gif`;
-  }
+    const variants = uniqArrays([
+      cps0,
+      stripVS(cps0),
+      stripSkin(cps0),
+      stripSkin(stripVS(cps0)),
+      firstChunkBeforeZWJ(cps0),
+      stripVS(firstChunkBeforeZWJ(cps0)),
+      stripSkin(firstChunkBeforeZWJ(cps0)),
+      stripSkin(stripVS(firstChunkBeforeZWJ(cps0))),
+    ]);
 
-  function resolveAnimatedCodeForEmojiText(emojiText) {
-    if (!animReady || !emojiText) return null;
+    const joins = ["-", "_"];
+    const urls = [];
 
-    // exact
-    if (animEmojiToCode.has(emojiText)) return animEmojiToCode.get(emojiText);
+    for (const cps of variants) {
+      const partsNoPad = cps.map(hexNoPad);
+      const partsPad = cps.map(hexPad);
 
-    // strip VS + skin tone
-    const stripped = stripVariationAndSkin(emojiText);
-    if (animEmojiToCode.has(stripped)) return animEmojiToCode.get(stripped);
+      for (const sep of joins) {
+        const file1 = partsNoPad.join(sep);
+        const file2 = partsPad.join(sep);
 
-    // first chunk for zwj sequences
-    const first = stripVariationAndSkin(firstChunkBeforeZWJ(stripped));
-    if (animEmojiToCode.has(first)) return animEmojiToCode.get(first);
-
-    // try shortcode direct from metadata
-    const shorts =
-      (metaReady && (emojiToShortcodes.get(emojiText) || emojiToShortcodes.get(stripped) || emojiToShortcodes.get(first))) ||
-      [];
-    for (const sc of shorts) {
-      const code = animTagToCode.get(sc);
-      if (code) return code;
-    }
-
-    // fuzzy match via tokens from shortcodes (or from codepoints if none)
-    const queryTokens = new Set();
-    for (const sc of shorts) for (const tok of tokensFromTerm(sc)) queryTokens.add(tok);
-
-    // if we got nothing, try to build tokens from any available alt-like term (nothing here)
-    if (!queryTokens.size) return null;
-
-    let best = null;
-    let bestScore = 0;
-
-    for (const entry of animEntries) {
-      const score = jaccard(queryTokens, entry.tokens);
-      if (score > bestScore) {
-        bestScore = score;
-        best = entry.code;
+        if (file1) urls.push(`${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/${file1}.png`);
+        if (file2 && file2 !== file1) urls.push(`${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/${file2}.png`);
       }
     }
 
-    // only accept if it matches at least something
-    if (best && bestScore > 0) return best;
-    return null;
-  }
-
-  function resolveAnimatedCodeForNameOrTag(raw) {
-    if (!animReady) return null;
-    const norm = normalizeTag(raw);
-    if (norm && animTagToCode.has(norm)) return animTagToCode.get(norm);
-
-    // if it's like "Sob" -> try ":sob:"
-    const toks = new Set(tokensFromTerm(raw));
-    if (!toks.size) return null;
-
-    let best = null;
-    let bestScore = 0;
-
-    for (const entry of animEntries) {
-      const score = jaccard(toks, entry.tokens);
-      if (score > bestScore) {
-        bestScore = score;
-        best = entry.code;
-      }
-    }
-
-    if (best && bestScore > 0) return best;
-    return null;
+    // de-dupe
+    return Array.from(new Set(urls));
   }
 
   function wrapEmojiImg(img) {
@@ -501,50 +287,25 @@
     return box;
   }
 
-  function makeAnimatedEmojiBoxFromCode(codeFolder, altText) {
+  function makeAranjaEmojiBox(emojiText) {
     const img = document.createElement("img");
-    img.alt = altText || "";
+    img.alt = emojiText;
     img.decoding = "async";
     img.loading = "eager";
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    const webp = gstaticWebp(codeFolder);
-    const gif = gstaticGif(codeFolder);
+    const candidates = buildAranjaCandidates(emojiText);
+    let idx = 0;
 
-    let stage = 0;
     img.onerror = () => {
-      stage++;
-      if (stage === 1) img.src = gif;
-      else img.src = "";
+      idx++;
+      if (idx < candidates.length) img.src = candidates[idx];
+      else img.src = ""; // fail closed (still boxed & sized)
     };
-    img.src = webp;
 
+    img.src = candidates[0] || "";
     return wrapEmojiImg(img);
-  }
-
-  function makeEmojiBoxFallbackStatic(emojiText) {
-    // fallback: keep it as text but inside emoji-box with forced square sizing
-    const span = document.createElement("span");
-    span.textContent = emojiText;
-    const box = document.createElement("span");
-    box.className = "emoji-box";
-    box.appendChild(span);
-    return box;
-  }
-
-  const graphemes =
-    typeof Intl !== "undefined" && Intl.Segmenter
-      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-      : null;
-
-  let hasPictographic = null;
-  try {
-    const re = /\p{Extended_Pictographic}/u;
-    hasPictographic = (s) => re.test(s);
-  } catch {
-    const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-    hasPictographic = (s) => fallback.test(s);
   }
 
   function replaceUnicodeEmoji(container) {
@@ -565,12 +326,7 @@
         for (const { segment } of graphemes.segment(text)) {
           const isEmojiSeg = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
           if (isEmojiSeg) {
-            const code = resolveAnimatedCodeForEmojiText(segment);
-            if (code) {
-              frag.appendChild(makeAnimatedEmojiBoxFromCode(code, segment));
-            } else {
-              frag.appendChild(makeEmojiBoxFallbackStatic(segment));
-            }
+            frag.appendChild(makeAranjaEmojiBox(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -585,12 +341,9 @@
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          const seg = m[0];
-          const code = resolveAnimatedCodeForEmojiText(seg);
-          if (code) frag.appendChild(makeAnimatedEmojiBoxFromCode(code, seg));
-          else frag.appendChild(makeEmojiBoxFallbackStatic(seg));
+          frag.appendChild(makeAranjaEmojiBox(m[0]));
           changed = true;
-          last = idx + seg.length;
+          last = idx + m[0].length;
         }
         if (!changed) return;
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
@@ -601,45 +354,18 @@
     });
   }
 
-  // YouTube custom emoji images (<img>) => replace with animated if possible, else box them
+  // YouTube custom emoji images (<img>) => box them, but DO NOT keep native unicode anywhere
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
 
     candidates.forEach((oldImg) => {
-      const altRaw =
-        oldImg.getAttribute("alt") ||
-        oldImg.getAttribute("aria-label") ||
-        oldImg.getAttribute("title") ||
-        "";
-
-      // If alt is a unicode emoji, use that directly
-      let code = null;
-      if (altRaw && (hasPictographic(altRaw) || /[\u200D\uFE0F]/.test(altRaw))) {
-        code = resolveAnimatedCodeForEmojiText(altRaw);
-      }
-
-      // If alt is name-ish, try metadata shortcode mapping then fuzzy tag match
-      if (!code && altRaw) {
-        const norm = normalizeTag(altRaw);
-        if (metaReady && shortcodeToEmoji.has(norm)) {
-          const em = shortcodeToEmoji.get(norm);
-          code = resolveAnimatedCodeForEmojiText(em);
-        }
-        if (!code) code = resolveAnimatedCodeForNameOrTag(altRaw);
-      }
-
-      if (code) {
-        const boxed = makeAnimatedEmojiBoxFromCode(code, altRaw);
-        oldImg.replaceWith(boxed);
-        return;
-      }
-
-      // fallback: keep original img but boxed
       const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
+      const alt = oldImg.getAttribute("alt") || oldImg.getAttribute("aria-label") || ":emoji:";
+
       const img = document.createElement("img");
-      img.alt = altRaw || ":emoji:";
+      img.alt = alt;
       img.decoding = "async";
       img.loading = "eager";
       img.referrerPolicy = "no-referrer";
@@ -647,7 +373,7 @@
       img.src = src;
 
       const boxed = wrapEmojiImg(img);
-      img.onerror = () => boxed.replaceWith(document.createTextNode(img.alt));
+      img.onerror = () => boxed.replaceWith(document.createTextNode(alt));
       oldImg.replaceWith(boxed);
     });
   }
@@ -657,11 +383,9 @@
     const line = container.closest(".line") || container;
     const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
 
-    // Tuned for OBS / Chromium baseline
+    // tuned for OBS / Chromium baseline
     const sizePx = Math.round(fontPx * 1.15);
     const boxH = Math.round(fontPx * 1.0);
-
-    // Move the box down a bit to sit on baseline (no "stuck to top")
     const yShift = Math.round(fontPx * 0.12);
 
     const boxes = container.querySelectorAll(".emoji-box");
@@ -673,23 +397,12 @@
       box.style.setProperty("position", "relative", "important");
       box.style.setProperty("top", `${yShift}px`, "important");
 
-      // force a square, always
       const img = box.querySelector("img");
       if (img) {
         img.style.setProperty("width", `${sizePx}px`, "important");
         img.style.setProperty("height", `${sizePx}px`, "important");
         img.style.setProperty("object-fit", "contain", "important");
         img.style.setProperty("display", "block", "important");
-      } else {
-        // text fallback inside box
-        const span = box.firstChild;
-        if (span && span.nodeType === 1) {
-          span.style.setProperty("display", "block", "important");
-          span.style.setProperty("width", `${sizePx}px`, "important");
-          span.style.setProperty("height", `${sizePx}px`, "important");
-          span.style.setProperty("line-height", `${sizePx}px`, "important");
-          span.style.setProperty("text-align", "center", "important");
-        }
       }
     });
   }
