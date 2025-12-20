@@ -2,212 +2,88 @@
 (function () {
   const stack = document.getElementById("stack");
 
-  // Tuning: ?fs=36&keep=600&hype=<url>&cid=<channelId>&elephant=1
+  // Tuning: ?fs=36&keep=600&hype=<url>
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
-  const elephantEnabled = params.get("elephant") === "1"; // OFF by default
-
   document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
-  if (keepParam) {
+  if (keepParam)
     document.documentElement.style.setProperty("--max-keep", parseInt(keepParam, 10));
-  }
 
-  // ---- Robust channelId resolution ----
-  function looksLikeChannelId(s) {
-    return typeof s === "string" && /^UC[a-zA-Z0-9_-]{22}$/.test(s);
-  }
+  // Prefer ?cid=... if present, else use last path segment
+  const cidFromQuery = params.get("cid") || params.get("channelId");
+  const channelId = cidFromQuery
+    ? decodeURIComponent(cidFromQuery)
+    : decodeURIComponent(location.pathname.split("/").pop());
 
-  function getChannelId() {
-    const q = params.get("cid") || params.get("channelId") || params.get("id");
-    if (q) return decodeURIComponent(q);
-
-    const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    for (const s of segs) if (looksLikeChannelId(s)) return s;
-
-    const last = segs[segs.length - 1];
-    if (looksLikeChannelId(last)) return last;
-
-    return null;
-  }
-
-  const channelId = getChannelId();
-
-  if (!channelId || !looksLikeChannelId(channelId)) {
-    console.error(
-      "[overlay] Missing/invalid channelId.\n" +
-        "Use:\n" +
-        "  https://YOURDOMAIN/<CHANNEL_ID>\n" +
-        "or\n" +
-        "  https://YOURDOMAIN/overlay.html?cid=<CHANNEL_ID>\n",
-      { pathname: location.pathname, search: location.search },
-    );
-    return;
-  }
-
-  console.log("[overlay] channelId =", channelId);
-
-  // ---- WebSocket connect / fallback params / heartbeat ----
+  // WebSocket to our server (ORIGINAL behavior)
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBase = wsProtocol + "//" + location.host;
+  const ws = new WebSocket(wsBase + "/ws?cid=" + encodeURIComponent(channelId));
 
-  // Many servers differ on param name. We'll try several automatically.
-  const wsUrlBuilders = [
-    (id) => `/ws?cid=${encodeURIComponent(id)}`,
-    (id) => `/ws?channelId=${encodeURIComponent(id)}`,
-    (id) => `/ws?id=${encodeURIComponent(id)}`,
-    (id) => `/ws?c=${encodeURIComponent(id)}`,
-  ];
+  ws.addEventListener("open", () => {
+    console.log("[overlay] WS open");
+  });
+  ws.addEventListener("close", () => {
+    console.log("[overlay] WS closed, retry in 5s");
+    setTimeout(() => location.reload(), 5000);
+  });
+  ws.addEventListener("error", (e) => {
+    console.error("[overlay] WS error:", e);
+  });
 
-  let ws = null;
-  let reconnectAttempts = 0;
-  let reconnectTimer = null;
-  let heartbeatTimer = null;
+  // ===== Elephant sound every 15 minutes (after interaction) =====
+  // Only enable if /elephant.mp3 actually exists (avoids 404 spam).
+  const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
+  let elephantAudio = null;
+  let elephantStarted = false;
 
-  let builderIndex = 0;
-  let openedAt = 0;
-
-  function clearHeartbeat() {
-    if (heartbeatTimer) {
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
+  async function initElephantIfPresent() {
+    try {
+      const res = await fetch("/elephant.mp3", { method: "HEAD", cache: "no-store" });
+      if (!res.ok) return; // silently disable if missing
+      elephantAudio = new Audio("/elephant.mp3");
+      elephantAudio.preload = "auto";
+    } catch {
+      // ignore
     }
   }
 
-  function startHeartbeat() {
-    clearHeartbeat();
-    // Send something periodically so proxies/servers don't drop "idle" sockets.
-    heartbeatTimer = setInterval(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      try {
-        ws.send(JSON.stringify({ type: "ping", t: Date.now() }));
-      } catch {}
-    }, 25000);
-  }
-
-  function sendSubscribe() {
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    // Send a "hello/subscribe" message that covers common server expectations.
-    const payloads = [
-      { type: "subscribe", cid: channelId },
-      { type: "subscribe", channelId },
-      { type: "subscribe", id: channelId },
-      { type: "hello", cid: channelId },
-      { type: "hello", channelId },
-    ];
-    for (const p of payloads) {
-      try {
-        ws.send(JSON.stringify(p));
-      } catch {}
-    }
-  }
-
-  function scheduleReconnect(immediate = false) {
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-
-    reconnectAttempts++;
-    const delay = immediate ? 50 : Math.min(10000, 500 * Math.pow(1.6, reconnectAttempts));
-    reconnectTimer = setTimeout(connectWS, delay);
-  }
-
-  function connectWS() {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-
-    clearHeartbeat();
-
-    const url = wsBase + wsUrlBuilders[builderIndex](channelId);
-    console.log("[overlay] connecting:", url);
-
-    ws = new WebSocket(url);
-
-    ws.addEventListener("open", () => {
-      openedAt = Date.now();
-      reconnectAttempts = 0;
-      console.log("[overlay] WS open");
-
-      // Some servers require an immediate subscribe message.
-      sendSubscribe();
-
-      // Keepalive
-      startHeartbeat();
-    });
-
-    ws.addEventListener("close", (ev) => {
-      const aliveMs = openedAt ? Date.now() - openedAt : 0;
-
-      console.log("[overlay] WS closed", {
-        code: ev.code,
-        reason: ev.reason,
-        wasClean: ev.wasClean,
-        aliveMs,
-        tried: builderIndex,
-      });
-
-      clearHeartbeat();
-
-      // If it closes almost immediately, try the next URL style (param name mismatch).
-      if (aliveMs < 1500 && builderIndex < wsUrlBuilders.length - 1) {
-        builderIndex++;
-        scheduleReconnect(true);
-        return;
+  function playElephant() {
+    if (!elephantAudio) return;
+    try {
+      elephantAudio.currentTime = 0;
+      const p = elephantAudio.play();
+      if (p && typeof p.catch === "function") {
+        p.catch((err) => console.warn("[overlay] elephant play blocked:", err));
       }
-
-      // Otherwise normal backoff reconnect (keep current builderIndex).
-      scheduleReconnect(false);
-    });
-
-    ws.addEventListener("error", (e) => {
-      console.error("[overlay] WS error:", e);
-      // close handler will handle reconnect
-    });
-
-    ws.addEventListener("message", onWSMessage);
+    } catch (e) {
+      console.warn("[overlay] elephant play error:", e);
+    }
   }
 
-  // ===== Elephant sound (disabled by default) =====
-  if (elephantEnabled) {
-    const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
-
-    // Only enable if you actually add /public/elephant.mp3 to your deployment.
-    const elephantAudio = new Audio("/elephant.mp3");
-    elephantAudio.preload = "auto";
-
-    let elephantStarted = false;
-
-    function playElephant() {
-      try {
-        elephantAudio.currentTime = 0;
-        const p = elephantAudio.play();
-        if (p && typeof p.catch === "function") {
-          p.catch((err) => console.warn("[overlay] elephant play blocked:", err));
-        }
-      } catch (e) {
-        console.warn("[overlay] elephant play error:", e);
-      }
-    }
-
-    function startElephant() {
-      if (elephantStarted) return;
-      elephantStarted = true;
-      playElephant();
-      setInterval(playElephant, ELEPHANT_INTERVAL_MS);
-      window.removeEventListener("click", startElephant);
-      window.removeEventListener("keydown", startElephant);
-    }
-
-    window.addEventListener("click", startElephant);
-    window.addEventListener("keydown", startElephant);
+  function startElephant() {
+    if (elephantStarted) return;
+    elephantStarted = true;
+    playElephant();
+    setInterval(playElephant, ELEPHANT_INTERVAL_MS);
+    window.removeEventListener("click", startElephant);
+    window.removeEventListener("keydown", startElephant);
   }
-  // ===== end elephant sound =====
+
+  initElephantIfPresent().then(() => {
+    if (elephantAudio) {
+      window.addEventListener("click", startElephant);
+      window.addEventListener("keydown", startElephant);
+    }
+  });
+  // ===== end periodic elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
   const HYPE_THRESHOLD = 500; // msgs per minute
-  const HYPE_DURATION_MS = 8000;
-  const HYPE_COOLDOWN_MS = 30 * 60 * 1000;
-  const SPEED_WINDOW_MS = 60000;
+  const HYPE_DURATION_MS = 8000; // ~8s visible
+  const HYPE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+  const SPEED_WINDOW_MS = 60000; // rolling 60s window
 
   const hypeEl = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
@@ -217,6 +93,7 @@
   let lastHypeAt = 0;
   let hypeReady = false;
 
+  // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
     if (!hypeEl || !hypeImg) return;
 
@@ -233,14 +110,19 @@
 
     let idx = 0;
     function tryNext() {
-      if (idx >= candidates.length) return;
+      if (idx >= candidates.length) {
+        console.warn("[overlay] no hype gif found");
+        return;
+      }
       const src = candidates[idx++];
       const img = new Image();
       img.onload = () => {
         hypeImg.src = src;
         hypeReady = true;
       };
-      img.onerror = () => tryNext();
+      img.onerror = () => {
+        tryNext();
+      };
       img.src = src;
     }
     tryNext();
@@ -253,14 +135,15 @@
       arrivalTimes.shift();
     }
     const ratePerMin = (arrivalTimes.length * 60000) / SPEED_WINDOW_MS;
-
     if (ratePerMin >= HYPE_THRESHOLD && now - lastHypeAt > HYPE_COOLDOWN_MS) {
       triggerHypeGif(now);
     }
   }
 
   function triggerHypeGif(now) {
-    if (!hypeEl || !hypeReady) return;
+    if (!hypeEl) return;
+    if (!hypeReady) return;
+
     lastHypeAt = now;
     if (hypeVisible) return;
 
@@ -289,7 +172,6 @@
     "#779997",
     "#FFF700",
   ];
-
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
@@ -310,62 +192,62 @@
   }
 
   // ========= Emoji normalization (FIX) =========
+
+  // Prefer grapheme-safe segmentation when available (fixes 😉 + compound emoji sequences)
   const graphemeSegmenter =
     typeof Intl !== "undefined" && Intl.Segmenter
       ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
       : null;
 
-  let isEmojiSegment = null;
+  // Emoji detection: use Extended_Pictographic if supported
+  let isEmoji = null;
   try {
     const re = /\p{Extended_Pictographic}/u;
-    isEmojiSegment = (s) => re.test(s);
+    isEmoji = (s) => re.test(s);
   } catch {
+    // Fallback: common emoji ranges (not perfect but safe)
     const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-    isEmojiSegment = (s) => fallback.test(s);
+    isEmoji = (s) => fallback.test(s);
   }
 
+  // Make <img> emoji look like text emoji: same height, baseline aligned
   function normalizeEmojiImages(container) {
-    const candidates = container.querySelectorAll(
-      'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
+    const imgs = container.querySelectorAll(
+      'img.yt-emoji, img.emoji, img[src*="ggpht"], img[src*="googleusercontent"]',
     );
-    candidates.forEach((oldImg) => {
+
+    imgs.forEach((oldImg) => {
       const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
       const alt = oldImg.getAttribute("alt") || ":emoji:";
+
       const newImg = document.createElement("img");
       newImg.alt = alt;
       newImg.className = "emoji";
+
+      // Inline styling so it works even if CSS is missing/overridden
+      newImg.style.height = "1.15em";
+      newImg.style.width = "auto";
+      newImg.style.display = "inline-block";
+      newImg.style.lineHeight = "1";
+      newImg.style.verticalAlign = "-0.22em";
+
       newImg.decoding = "async";
       newImg.loading = "eager";
       newImg.referrerPolicy = "no-referrer";
       newImg.crossOrigin = "anonymous";
-      newImg.onerror = () => oldImg.replaceWith(document.createTextNode(alt));
+
+      newImg.onerror = () => {
+        oldImg.replaceWith(document.createTextNode(alt));
+      };
+
       newImg.src = src;
       oldImg.replaceWith(newImg);
     });
   }
 
+  // Wrap native Unicode emoji into <span> with proper sizing/baseline
   function normalizeUnicodeEmoji(container) {
-    if (!container) return;
-
-    const walker = document.createTreeWalker(
-      container,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode(node) {
-          const p = node.parentNode;
-          if (!p) return NodeFilter.FILTER_REJECT;
-          if (p.closest && p.closest(".emoji-char")) return NodeFilter.FILTER_REJECT;
-
-          const t = node.nodeValue;
-          if (!t || !t.trim()) return NodeFilter.FILTER_REJECT;
-          if (!isEmojiSegment(t)) return NodeFilter.FILTER_REJECT;
-
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      },
-      false,
-    );
-
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
@@ -376,20 +258,34 @@
       const text = node.nodeValue;
       if (!text) return;
 
+      // Quick skip if no emoji likely present
+      if (!isEmoji(text)) return;
+
       const frag = document.createDocumentFragment();
 
       if (graphemeSegmenter) {
         for (const { segment } of graphemeSegmenter.segment(text)) {
-          if (isEmojiSegment(segment)) {
+          if (isEmoji(segment)) {
             const span = document.createElement("span");
             span.className = "emoji emoji-char";
             span.textContent = segment;
+
+            // Inline styles to fix “thin/small/stuck at top”
+            span.style.display = "inline-block";
+            span.style.fontSize = "1.15em";
+            span.style.lineHeight = "1";
+            span.style.verticalAlign = "-0.22em";
+            span.style.fontWeight = "400";
+            span.style.fontFamily =
+              '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
+
             frag.appendChild(span);
           } else {
             frag.appendChild(document.createTextNode(segment));
           }
         }
       } else {
+        // Fallback: split by a basic emoji matcher
         fallbackEmojiSeq.lastIndex = 0;
         if (!fallbackEmojiSeq.test(text)) return;
         fallbackEmojiSeq.lastIndex = 0;
@@ -398,15 +294,25 @@
         let match;
         while ((match = fallbackEmojiSeq.exec(text))) {
           const idx = match.index;
+
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
 
           const span = document.createElement("span");
           span.className = "emoji emoji-char";
           span.textContent = match[0];
-          frag.appendChild(span);
 
+          span.style.display = "inline-block";
+          span.style.fontSize = "1.15em";
+          span.style.lineHeight = "1";
+          span.style.verticalAlign = "-0.22em";
+          span.style.fontWeight = "400";
+          span.style.fontFamily =
+            '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
+
+          frag.appendChild(span);
           last = idx + match[0].length;
         }
+
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
       }
 
@@ -422,6 +328,7 @@
     a.className = "author";
     a.style.color = nameColor(author || "User");
 
+    // Badges BEFORE username: owner → mod → membership (primary)
     if (isOwner) a.appendChild(makeBadgeImg(OWNER_IMG, "owner"));
     if (isMod) a.appendChild(makeBadgeImg(MOD_IMG, "mod"));
     if (isMember && memberBadges && memberBadges.length) {
@@ -434,23 +341,24 @@
     m.className = "message";
     m.innerHTML = html || "";
 
+    // Apply emoji fixes
     normalizeEmojiImages(m);
     normalizeUnicodeEmoji(m);
 
     line.appendChild(a);
     line.appendChild(m);
+
     return line;
   }
 
-  function onWSMessage(ev) {
+  ws.addEventListener("message", (ev) => {
     let data;
     try {
       data = JSON.parse(ev.data);
-    } catch {
-      // If server sends non-JSON pings, ignore
+    } catch (e) {
+      console.warn("Bad message JSON", e);
       return;
     }
-
     if (!data || data.type !== "chat" || !Array.isArray(data.items)) return;
 
     for (const item of data.items) {
@@ -462,7 +370,6 @@
         !!item.isMember,
         item.memberBadges || [],
       );
-
       stack.appendChild(line);
 
       // animate push-up
@@ -475,15 +382,19 @@
         });
       }
 
-      requestAnimationFrame(() => line.classList.add("enter"));
+      // enter animation
+      requestAnimationFrame(() => {
+        line.classList.add("enter");
+      });
+
       recordMessageArrival();
     }
 
     const maxKeep =
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
-    while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
-  }
+      parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--max-keep"),
+      ) || 600;
 
-  // Start
-  connectWS();
+    while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
+  });
 })();
