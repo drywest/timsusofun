@@ -1,128 +1,175 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>YT Chat Overlay</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@700;900&display=swap" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Lato:wght@700;900&display=swap"
+    />
+
     <style>
-      html, body {
-        margin:0; padding:0; height:100%; background:transparent;
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: transparent;
         /* prevent scrollbars from overlay animations */
-        overflow:hidden;
+        overflow: hidden;
       }
 
       * {
-        font-family: "Lato","Apple Color Emoji","Apple Emoji","Segoe UI Emoji",
-          "Segoe UI Symbol","Noto Color Emoji",system-ui,-apple-system,
-          BlinkMacSystemFont,"Segoe UI",sans-serif !important;
+        font-family:
+          "Lato",
+          "Apple Color Emoji",
+          "Apple Emoji",
+          "Segoe UI Emoji",
+          "Segoe UI Symbol",
+          "Noto Color Emoji",
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif !important;
       }
 
-      :root{
-        --line-gap:10px;
+      :root {
+        --line-gap: 10px;
+
         /* slightly smaller so more messages fit */
-        --font-size:32px; /* was 35px */
-        --shadow:0 3px 0 rgba(0,0,0,.45), 0 10px 24px rgba(0,0,0,.28);
-        --enter-ms:40ms;
-        --push-ms:140ms;
-        --max-keep:400;
+        --font-size: 32px;
+
+        --shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
+        --enter-ms: 40ms;
+        --push-ms: 140ms;
+
+        /* unified emoji size */
+        --emoji-size: 1.15em;
+
+        --max-keep: 400;
       }
 
-      .stack{
-        position:absolute; inset:0;
-        display:flex; flex-direction:column; justify-content:flex-end;
-        padding:18px; gap:var(--line-gap);
-        overflow:hidden;
+      .stack {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: 18px;
+        gap: var(--line-gap);
+        overflow: hidden;
         will-change: transform;
         transition: transform var(--push-ms) ease-out;
       }
 
-      .line{
-        display:block;
-        font-size:var(--font-size);
-        line-height:1.12;
-        font-weight:900;
-        letter-spacing:.2px;
-        color:#fff !important;
-        text-shadow:var(--shadow);
-        white-space:normal; word-break:break-word;
+      .line {
+        display: block;
+        font-size: var(--font-size);
+        line-height: 1.18; /* slightly taller to fit emoji comfortably */
+        font-weight: 900;
+        letter-spacing: 0.2px;
+        color: #fff !important;
+        text-shadow: var(--shadow);
+        white-space: normal;
+        word-break: break-word;
+
         /* more saturation / pop */
-        filter:saturate(1.35);
+        filter: saturate(1.35);
 
-        opacity:0; transform:translateY(8px);
-        transition: transform var(--enter-ms) ease-out, opacity var(--enter-ms) ease-out;
+        opacity: 0;
+        transform: translateY(8px);
+        transition:
+          transform var(--enter-ms) ease-out,
+          opacity var(--enter-ms) ease-out;
       }
-      .line.enter{ transform:translateY(0); opacity:1; }
 
-      .author{ font-weight:900; margin-right:.25em; }
-      .message{ font-weight:900; color:#fff !important; }
-
-      .badges{
-        display:inline-flex;
-        align-items:center;
-        margin-right:.25em;
+      .line.enter {
+        transform: translateY(0);
+        opacity: 1;
       }
-      .badges img{
-        height:1em;
-        width:auto;
-        vertical-align:-0.12em;
-        margin-right:0.18em;
-        image-rendering:auto;
+
+      .author {
+        font-weight: 900;
+        margin-right: 0.25em;
+      }
+
+      .message {
+        font-weight: 900;
+        color: #fff !important;
+      }
+
+      .badges {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 0.25em;
+      }
+
+      .badges img {
+        height: 1em;
+        width: auto;
+        vertical-align: -0.12em;
+        margin-right: 0.18em;
+        image-rendering: auto;
       }
 
       /* YouTube emoji <img> */
-      .emoji{
-        display:inline-block;
-        height:1.35em;
-        width:auto;
-        vertical-align:-0.25em;
+      .emoji {
+        display: inline-block;
+        height: var(--emoji-size);
+        width: auto;
+        line-height: 1;
+        vertical-align: -0.18em;
       }
 
       /* Native (Unicode) emoji wrapped by JS */
-      .emoji-char{
-        display:inline-block;
-        width:1.35em;
-        height:1.35em;
-        line-height:1.35em;
-        font-size:1.35em;
-        font-weight:900;
-        font-family:"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";
-        vertical-align:-0.25em;
+      .emoji-char {
+        display: inline-block;
+        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+        font-weight: 400; /* critical: prevents “thin” look from inherited heavy weight */
+        font-size: var(--emoji-size);
+        line-height: 1;
+        vertical-align: -0.18em;
       }
 
-      /* ===== Hype GIF overlay ===== */
+      /* ===== Hype GIF overlay (kept for compatibility) ===== */
       #hype {
         position: absolute;
-        left: 50%;
-        bottom: 10px;
-        transform: translateX(-50%); /* fade only to avoid overflow/scrollbar */
-        opacity: 0;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         pointer-events: none;
+        opacity: 0;
         transition: opacity 220ms ease;
         z-index: 5;
       }
+
       #hype.show {
         opacity: 1;
       }
+
       #hype img {
-        display:block;
-        /* always fit while keeping aspect ratio */
-        max-width: min(95vw, 1200px);
-        max-height: min(60vh, 800px);
-        width: auto;
-        height: auto;
-        filter: drop-shadow(0 10px 24px rgba(0,0,0,.35));
+        display: block;
+        max-width: 60%;
+        max-height: 60%;
+        object-fit: contain;
       }
     </style>
   </head>
+
   <body>
     <div id="stack" class="stack"></div>
 
-    <!-- GIF src is resolved by JS; shows when chat speed > threshold -->
-    <div id="hype" aria-hidden="true">
-      <img id="hype-img" alt="Chat is fast!" />
+    <!-- optional hype overlay -->
+    <div id="hype">
+      <img src="pepe.gif" alt="hype" />
     </div>
 
-    <script src="/overlay.js"></script>
+    <!-- If your overlay.js uses socket.io, keep this. If not, harmless. -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script src="./overlay.js"></script>
   </body>
 </html>
