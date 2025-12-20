@@ -23,12 +23,12 @@
       :root {
         --font-size: 36px;
         --max-keep: 600;
-        --enter-ms: 90ms;
+        --enter-ms: 120ms; /* smooth fade */
         --push-ms: 140ms;
 
-        /* Emoji tuning */
-        --emoji-size: 1.25em;     /* size relative to text */
-        --emoji-baseline: 0.18em; /* push DOWN to align with text */
+        /* Stroke tuning */
+        --stroke-width: 0.10em;
+        --stroke-color: rgba(0, 0, 0, 0.85);
       }
 
       body {
@@ -54,8 +54,10 @@
         font-weight: 900;
         color: #fff;
 
-        /* ✅ removed drop shadow */
+        /* ✅ Shadow removed, stroke added */
         text-shadow: none;
+        -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
+        paint-order: stroke fill; /* harmless if unsupported */
 
         word-break: break-word;
 
@@ -89,22 +91,18 @@
         margin-right: 0.18em;
       }
 
-      /* ===== Emoji: forced layout ===== */
+      /* Emoji wrapper. JS will ALSO force inline styles in px. */
       .emoji-box {
-        display: inline-flex !important;
-        align-items: flex-end !important;
-        justify-content: center !important;
-        height: 1em !important;
-        line-height: 1 !important;
-        vertical-align: baseline !important;
-        position: relative !important;
-        top: var(--emoji-baseline) !important;
+        display: inline-flex;
+        align-items: flex-end;
+        justify-content: center;
+        vertical-align: baseline;
+        position: relative;
+        line-height: 1;
       }
 
-      .emoji-box > img {
-        height: var(--emoji-size) !important;
-        width: auto !important;
-        display: block !important;
+      .emoji-box img {
+        display: block;
       }
 
       /* ===== Hype GIF ===== */
