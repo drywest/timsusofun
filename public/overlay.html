@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>YT Chat Overlay</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>YouTube Chat Overlay</title>
+
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Lato:wght@700;900&display=swap"
@@ -19,55 +20,48 @@
         overflow: hidden;
       }
 
-      * {
+      :root {
+        --font-size: 36px;
+        --max-keep: 600;
+        --gap: 10px;
+        --enter-ms: 90ms;
+        --push-ms: 140ms;
+      }
+
+      /* Use a font stack that includes color emoji */
+      body {
         font-family:
           "Lato",
-          "Apple Color Emoji",
-          "Apple Emoji",
-          "Segoe UI Emoji",
-          "Segoe UI Symbol",
-          "Noto Color Emoji",
           system-ui,
           -apple-system,
-          BlinkMacSystemFont,
           "Segoe UI",
-          sans-serif !important;
+          Arial,
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Noto Color Emoji",
+          sans-serif;
       }
 
-      :root {
-        --line-gap: 10px;
-        --font-size: 36px;
-        --shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
-        --enter-ms: 40ms;
-        --push-ms: 140ms;
-        --emoji-size: 1.15em;
-        --max-keep: 400;
-      }
-
-      .stack {
+      #stack {
         position: absolute;
         inset: 0;
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
         padding: 18px;
-        gap: var(--line-gap);
+        gap: var(--gap);
         overflow: hidden;
         will-change: transform;
         transition: transform var(--push-ms) ease-out;
       }
 
       .line {
-        display: block;
         font-size: var(--font-size);
-        line-height: 1.18;
+        line-height: 1.22; /* important: gives emojis room */
         font-weight: 900;
-        letter-spacing: 0.2px;
-        color: #fff !important;
-        text-shadow: var(--shadow);
-        white-space: normal;
+        color: #fff;
+        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
         word-break: break-word;
-        filter: saturate(1.35);
 
         opacity: 0;
         transform: translateY(8px);
@@ -77,53 +71,66 @@
       }
 
       .line.enter {
-        transform: translateY(0);
         opacity: 1;
+        transform: translateY(0);
       }
 
       .author {
         font-weight: 900;
-        margin-right: 0.25em;
+        margin-right: 0.35em;
+        white-space: nowrap;
       }
 
       .message {
         font-weight: 900;
-        color: #fff !important;
       }
 
-      .badges {
-        display: inline-flex;
-        align-items: center;
-        margin-right: 0.25em;
-      }
-
-      .badges img {
+      /* Badge images */
+      .author img {
         height: 1em;
         width: auto;
         vertical-align: -0.12em;
         margin-right: 0.18em;
-        image-rendering: auto;
       }
 
-      /* YouTube emoji <img> */
-      .emoji {
-        display: inline-block;
-        height: var(--emoji-size);
+      /* ========= Emoji FIX ========= */
+
+      /* Only apply image sizing rules to <img>, not spans */
+      img.emoji,
+      img.emoji-img {
+        height: 1em;
         width: auto;
-        line-height: 1;
+        display: inline-block;
         vertical-align: -0.18em;
       }
 
-      /* Native (Unicode) emoji wrapped by JS */
+      /* Unicode emoji span (the real fix) */
       .emoji-char {
         display: inline-block;
-        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
-        font-weight: 400;
-        font-size: var(--emoji-size);
+
+        /* Make it match text height */
+        font-size: 1.05em;
         line-height: 1;
+
+        /* Prevent “thin” look from inheriting 900 */
+        font-weight: 400;
+
+        /* Baseline alignment so it doesn't stick to the top */
         vertical-align: -0.18em;
+
+        /* Force emoji-capable fonts */
+        font-family:
+          "Apple Color Emoji",
+          "Segoe UI Emoji",
+          "Noto Color Emoji",
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Arial,
+          sans-serif;
       }
 
+      /* ===== Hype GIF ===== */
       #hype {
         position: absolute;
         inset: 0;
@@ -150,13 +157,13 @@
   </head>
 
   <body>
-    <div id="stack" class="stack"></div>
+    <div id="stack"></div>
 
     <div id="hype">
-      <img id="hype-img" src="/pepe.gif" alt="hype" />
+      <img id="hype-img" alt="hype" />
     </div>
 
-    <!-- IMPORTANT: absolute path so /<channelId> routes don't break it -->
+    <!-- absolute path so it works on /UC... routes -->
     <script src="/overlay.js"></script>
   </body>
 </html>
