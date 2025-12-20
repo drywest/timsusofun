@@ -28,16 +28,7 @@
       }
 
       body {
-        font-family:
-          "Lato",
-          system-ui,
-          -apple-system,
-          "Segoe UI",
-          Arial,
-          "Apple Color Emoji",
-          "Segoe UI Emoji",
-          "Noto Color Emoji",
-          sans-serif;
+        font-family: "Lato", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
       }
 
       #stack {
@@ -55,7 +46,7 @@
 
       .line {
         font-size: var(--font-size);
-        line-height: 1.24; /* IMPORTANT: gives emoji room so it doesn't clip */
+        line-height: 1.24;
         font-weight: 900;
         color: #fff;
         text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
@@ -91,47 +82,20 @@
         margin-right: 0.18em;
       }
 
-      /* =========================
-         EMOJI FIX (critical)
-         ========================= */
-
-      /* Only style emoji IMAGES with these rules */
-      img.emoji,
+      /* YouTube custom emoji images */
       img.emoji-img {
-        height: 1.15em;
+        height: 1em;
         width: auto;
         display: inline-block;
-        vertical-align: -0.25em;
+        vertical-align: -0.18em;
       }
 
-      /* Unicode emoji SPANS (the thing that was broken) */
-      .emoji-char {
+      /* Unicode emojis converted to Twemoji SVG */
+      img.emoji-unicode {
+        height: 1em;
+        width: 1em;
         display: inline-block;
-
-        /* Make it same visual size as images */
-        font-size: 1.15em;
-        line-height: 1;
-
-        /* prevents the “thin/small” look from inheriting 900 */
-        font-weight: 400 !important;
-
-        /* baseline correction so it doesn't stick to the top */
-        vertical-align: -0.30em;
-
-        /* emoji-capable fonts */
-        font-family:
-          "Apple Color Emoji",
-          "Segoe UI Emoji",
-          "Noto Color Emoji",
-          system-ui,
-          -apple-system,
-          "Segoe UI",
-          Arial,
-          sans-serif !important;
-
-        /* extra nudge that fixes OBS/Chromium odd baselines */
-        position: relative;
-        top: 0.06em;
+        vertical-align: -0.22em; /* baseline fix */
       }
 
       /* ===== Hype GIF ===== */
