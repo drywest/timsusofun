@@ -138,7 +138,8 @@
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
-    for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+    for (let i = 0; i < name.length; i++)
+      h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
     const c = palette[Math.abs(h) % palette.length];
     colorCache.set(name, c);
     return c;
@@ -217,6 +218,7 @@
       newLines.push(line);
     }
     if (!newLines.length) return;
+
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
@@ -270,9 +272,8 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);      // YouTube emoji <img> -> forced box
-    normalizeUnicodeEmoji(m);     // Unicode emoji -> forced box + Twemoji
-    forceAnyRemainingEmoji(m);    // final hammer: force styles on anything left
+    normalizeEmojiImages(m);        // YouTube emoji <img>
+    replaceUnicodeEmojiWithNoto(m); // ✅ Unicode emoji -> Noto animated
 
     line.appendChild(a);
     line.appendChild(m);
@@ -294,49 +295,19 @@
     return img;
   }
 
-  // ================
-  // EMOJI: HARD FORCE
-  // ================
-
-  function forceImportantStyle(el, prop, value) {
-    try {
-      el.style.setProperty(prop, value, "important");
-    } catch {
-      el.style[prop] = value;
-    }
-  }
-
-  function wrapInEmojiBox(nodeToWrap) {
+  // Wrap something in a forced baseline box (overrides hostile CSS)
+  function wrapEmojiNode(node) {
     const box = document.createElement("span");
     box.className = "emoji-box";
-
-    // FORCE wrapper styles (in case CSS is overridden)
-    forceImportantStyle(box, "display", "inline-flex");
-    forceImportantStyle(box, "align-items", "flex-end");
-    forceImportantStyle(box, "justify-content", "center");
-    forceImportantStyle(box, "height", "1em");
-    forceImportantStyle(box, "line-height", "1");
-    forceImportantStyle(box, "vertical-align", "baseline");
-    forceImportantStyle(box, "position", "relative");
-    forceImportantStyle(box, "top", "0.16em");
-
-    box.appendChild(nodeToWrap);
+    box.appendChild(node);
     return box;
   }
 
-  function forceEmojiImg(img) {
-    forceImportantStyle(img, "height", "1.2em");
-    forceImportantStyle(img, "width", "1.2em");
-    forceImportantStyle(img, "display", "block");
-    forceImportantStyle(img, "transform", "translateY(0.02em)");
-  }
-
-  // YouTube emoji <img> -> put into forced emoji box
+  // YouTube custom emoji images (<img>) => force box
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
-
     candidates.forEach((oldImg) => {
       const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
       const alt = oldImg.getAttribute("alt") || ":emoji:";
@@ -349,42 +320,49 @@
       img.crossOrigin = "anonymous";
       img.src = src;
 
-      forceEmojiImg(img);
-      const box = wrapInEmojiBox(img);
+      const boxed = wrapEmojiNode(img);
+      img.onerror = () => boxed.replaceWith(document.createTextNode(alt));
 
-      img.onerror = () => box.replaceWith(document.createTextNode(alt));
-      oldImg.replaceWith(box);
+      oldImg.replaceWith(boxed);
     });
   }
 
-  // Unicode emoji -> Twemoji SVG img -> forced emoji box
-  const TWEMOJI_BASE = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
+  // ========= Unicode emoji -> Noto Emoji Animation =========
+  // Animated assets pattern:
+  // https://fonts.gstatic.com/s/e/notoemoji/latest/<code>/512.webp
+  // fallback: .../512.gif :contentReference[oaicite:1]{index=1}
+  const NOTO_BASE = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
 
-  function toCodePointSequence(str) {
-    const cps = [];
-    for (let i = 0; i < str.length; i++) {
-      const cp = str.codePointAt(i);
-      cps.push(cp.toString(16));
-      if (cp > 0xffff) i++;
-    }
-    return cps.join("-");
-  }
-
+  // Grapheme segmentation keeps ZWJ sequences together
   const graphemes =
     typeof Intl !== "undefined" && Intl.Segmenter
       ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
       : null;
 
-  let isEmoji = null;
+  let hasPictographic = null;
   try {
     const re = /\p{Extended_Pictographic}/u;
-    isEmoji = (s) => re.test(s);
+    hasPictographic = (s) => re.test(s);
   } catch {
+    // fallback: broad emoji-ish ranges
     const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-    isEmoji = (s) => fallback.test(s);
+    hasPictographic = (s) => fallback.test(s);
   }
 
-  function makeTwemojiBox(emojiText) {
+  function emojiToNotoCode(emojiText) {
+    // Use codepoints (including FE0F and 200D) joined by underscores
+    const cps = [];
+    for (let i = 0; i < emojiText.length; i++) {
+      const cp = emojiText.codePointAt(i);
+      cps.push(cp.toString(16));
+      if (cp > 0xffff) i++;
+    }
+    return cps.join("_");
+  }
+
+  function makeNotoAnimatedEmojiImg(emojiText) {
+    const code = emojiToNotoCode(emojiText);
+
     const img = document.createElement("img");
     img.alt = emojiText;
     img.decoding = "async";
@@ -392,17 +370,27 @@
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    const code = toCodePointSequence(emojiText);
-    img.src = TWEMOJI_BASE + code + ".svg";
+    // try animated webp first, then gif, then fallback to text
+    const webp = `${NOTO_BASE}${code}/512.webp`;
+    const gif = `${NOTO_BASE}${code}/512.gif`;
 
-    forceEmojiImg(img);
-    const box = wrapInEmojiBox(img);
+    let triedGif = false;
+    img.onerror = () => {
+      if (!triedGif) {
+        triedGif = true;
+        img.src = gif;
+        return;
+      }
+      // both failed -> show original emoji char
+      img.replaceWith(document.createTextNode(emojiText));
+    };
 
-    img.onerror = () => box.replaceWith(document.createTextNode(emojiText));
-    return box;
+    img.src = webp;
+
+    return wrapEmojiNode(img);
   }
 
-  function normalizeUnicodeEmoji(container) {
+  function replaceUnicodeEmojiWithNoto(container) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
@@ -412,16 +400,17 @@
       const text = node.nodeValue;
       if (!text || !text.trim()) return;
 
-      // quick skip
-      if (!isEmoji(text) && !/[\u200D\uFE0F]/.test(text)) return;
+      // quick skip: if there's no pictographic emoji and no emoji joiners/selectors
+      if (!hasPictographic(text) && !/[\u200D\uFE0F]/.test(text)) return;
 
       const frag = document.createDocumentFragment();
 
       if (graphemes) {
         let changed = false;
         for (const { segment } of graphemes.segment(text)) {
-          if (isEmoji(segment)) {
-            frag.appendChild(makeTwemojiBox(segment));
+          const isEmojiSegment = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
+          if (isEmojiSegment) {
+            frag.appendChild(makeNotoAnimatedEmojiImg(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -429,16 +418,24 @@
         }
         if (!changed) return;
       } else {
-        // fallback: simple match
-        const emojiSeq =
-          /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*/g;
+        // fallback regex (less perfect, but works)
+        let emojiSeq;
+        try {
+          emojiSeq = new RegExp(
+            "\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?(?:\\u200D\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?)*",
+            "gu",
+          );
+        } catch {
+          emojiSeq =
+            /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?)*/g;
+        }
 
         let last = 0;
         let m;
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeTwemojiBox(m[0]));
+          frag.appendChild(makeNotoAnimatedEmojiImg(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -449,25 +446,17 @@
     });
   }
 
-  // Final hammer: if anything slips through, force it down anyway
-  function forceAnyRemainingEmoji(container) {
-    const imgs = container.querySelectorAll("img");
-    imgs.forEach((img) => {
-      // If some global CSS is messing with images, this forces it back.
-      forceImportantStyle(img, "vertical-align", "baseline");
-    });
-
-    // If someone already inserted spans for emoji earlier, force them too.
-    const spans = container.querySelectorAll("span.emoji, span.emoji-char");
-    spans.forEach((sp) => {
-      forceImportantStyle(sp, "position", "relative");
-      forceImportantStyle(sp, "top", "0.16em");
-      forceImportantStyle(sp, "display", "inline-block");
-      forceImportantStyle(sp, "line-height", "1");
-    });
-  }
-
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
+    return String(s).replace(
+      /[&<>"']/g,
+      (m) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[m],
+    );
   }
 })();
