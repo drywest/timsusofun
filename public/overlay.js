@@ -2,10 +2,11 @@
 (function () {
   const stack = document.getElementById("stack");
 
-  // Tuning: ?fs=36&keep=600&hype=<url>&cid=<channelId>
+  // Tuning: ?fs=36&keep=600&hype=<url>&cid=<channelId>&elephant=1
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
+  const elephantEnabled = params.get("elephant") === "1"; // OFF by default
 
   document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
   if (keepParam) {
@@ -14,31 +15,17 @@
 
   // ---- Robust channelId resolution ----
   function looksLikeChannelId(s) {
-    // Typical YouTube channel IDs look like: UC + 22 chars = 24 total
-    // Allow - and _ as well.
     return typeof s === "string" && /^UC[a-zA-Z0-9_-]{22}$/.test(s);
   }
 
   function getChannelId() {
-    // 1) Prefer query param
-    const q1 = params.get("cid");
-    const q2 = params.get("channelId");
-    const q = q1 || q2;
+    const q = params.get("cid") || params.get("channelId") || params.get("id");
     if (q) return decodeURIComponent(q);
 
-    // 2) Otherwise scan path segments for a UC... id
     const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    for (const s of segs) if (looksLikeChannelId(s)) return s;
 
-    // Remove common filenames if present
-    const filtered = segs.filter((s) => !/\.html?$/.test(s) && s !== "overlay" && s !== "chat");
-
-    // Find first segment that matches channel ID pattern
-    for (const s of filtered) {
-      if (looksLikeChannelId(s)) return s;
-    }
-
-    // 3) Fallback to last segment ONLY if it matches
-    const last = filtered[filtered.length - 1];
+    const last = segs[segs.length - 1];
     if (looksLikeChannelId(last)) return last;
 
     return null;
@@ -48,25 +35,80 @@
 
   if (!channelId || !looksLikeChannelId(channelId)) {
     console.error(
-      "[overlay] Missing/invalid channelId. Use a link like:\n" +
+      "[overlay] Missing/invalid channelId.\n" +
+        "Use:\n" +
         "  https://YOURDOMAIN/<CHANNEL_ID>\n" +
         "or\n" +
-        "  https://YOURDOMAIN/overlay.html?cid=<CHANNEL_ID>\n\n" +
-        "Expected format: UCxxxxxxxxxxxxxxxxxxxxxx (24 chars total).",
+        "  https://YOURDOMAIN/overlay.html?cid=<CHANNEL_ID>\n",
       { pathname: location.pathname, search: location.search },
     );
-    return; // don't connect with a bad cid
+    return;
   }
 
   console.log("[overlay] channelId =", channelId);
 
-  // ---- WebSocket connect/reconnect ----
+  // ---- WebSocket connect / fallback params / heartbeat ----
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBase = wsProtocol + "//" + location.host;
+
+  // Many servers differ on param name. We'll try several automatically.
+  const wsUrlBuilders = [
+    (id) => `/ws?cid=${encodeURIComponent(id)}`,
+    (id) => `/ws?channelId=${encodeURIComponent(id)}`,
+    (id) => `/ws?id=${encodeURIComponent(id)}`,
+    (id) => `/ws?c=${encodeURIComponent(id)}`,
+  ];
 
   let ws = null;
   let reconnectAttempts = 0;
   let reconnectTimer = null;
+  let heartbeatTimer = null;
+
+  let builderIndex = 0;
+  let openedAt = 0;
+
+  function clearHeartbeat() {
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+  }
+
+  function startHeartbeat() {
+    clearHeartbeat();
+    // Send something periodically so proxies/servers don't drop "idle" sockets.
+    heartbeatTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      try {
+        ws.send(JSON.stringify({ type: "ping", t: Date.now() }));
+      } catch {}
+    }, 25000);
+  }
+
+  function sendSubscribe() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // Send a "hello/subscribe" message that covers common server expectations.
+    const payloads = [
+      { type: "subscribe", cid: channelId },
+      { type: "subscribe", channelId },
+      { type: "subscribe", id: channelId },
+      { type: "hello", cid: channelId },
+      { type: "hello", channelId },
+    ];
+    for (const p of payloads) {
+      try {
+        ws.send(JSON.stringify(p));
+      } catch {}
+    }
+  }
+
+  function scheduleReconnect(immediate = false) {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+
+    reconnectAttempts++;
+    const delay = immediate ? 50 : Math.min(10000, 500 * Math.pow(1.6, reconnectAttempts));
+    reconnectTimer = setTimeout(connectWS, delay);
+  }
 
   function connectWS() {
     if (reconnectTimer) {
@@ -74,70 +116,98 @@
       reconnectTimer = null;
     }
 
-    ws = new WebSocket(wsBase + "/ws?cid=" + encodeURIComponent(channelId));
+    clearHeartbeat();
+
+    const url = wsBase + wsUrlBuilders[builderIndex](channelId);
+    console.log("[overlay] connecting:", url);
+
+    ws = new WebSocket(url);
 
     ws.addEventListener("open", () => {
+      openedAt = Date.now();
       reconnectAttempts = 0;
       console.log("[overlay] WS open");
+
+      // Some servers require an immediate subscribe message.
+      sendSubscribe();
+
+      // Keepalive
+      startHeartbeat();
     });
 
     ws.addEventListener("close", (ev) => {
+      const aliveMs = openedAt ? Date.now() - openedAt : 0;
+
       console.log("[overlay] WS closed", {
         code: ev.code,
         reason: ev.reason,
         wasClean: ev.wasClean,
+        aliveMs,
+        tried: builderIndex,
       });
 
-      // Exponential backoff (max ~10s)
-      reconnectAttempts++;
-      const delay = Math.min(10000, 500 * Math.pow(1.6, reconnectAttempts));
-      reconnectTimer = setTimeout(connectWS, delay);
+      clearHeartbeat();
+
+      // If it closes almost immediately, try the next URL style (param name mismatch).
+      if (aliveMs < 1500 && builderIndex < wsUrlBuilders.length - 1) {
+        builderIndex++;
+        scheduleReconnect(true);
+        return;
+      }
+
+      // Otherwise normal backoff reconnect (keep current builderIndex).
+      scheduleReconnect(false);
     });
 
     ws.addEventListener("error", (e) => {
       console.error("[overlay] WS error:", e);
-      // allow close handler to reconnect
+      // close handler will handle reconnect
     });
 
     ws.addEventListener("message", onWSMessage);
   }
 
-  // ===== Elephant sound every 15 minutes (after interaction) =====
-  const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
-  const elephantAudio = new Audio("/elephant.mp3");
-  elephantAudio.preload = "auto";
-  let elephantStarted = false;
+  // ===== Elephant sound (disabled by default) =====
+  if (elephantEnabled) {
+    const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
 
-  function playElephant() {
-    try {
-      elephantAudio.currentTime = 0;
-      const p = elephantAudio.play();
-      if (p && typeof p.catch === "function") {
-        p.catch((err) => console.warn("[overlay] elephant play blocked:", err));
+    // Only enable if you actually add /public/elephant.mp3 to your deployment.
+    const elephantAudio = new Audio("/elephant.mp3");
+    elephantAudio.preload = "auto";
+
+    let elephantStarted = false;
+
+    function playElephant() {
+      try {
+        elephantAudio.currentTime = 0;
+        const p = elephantAudio.play();
+        if (p && typeof p.catch === "function") {
+          p.catch((err) => console.warn("[overlay] elephant play blocked:", err));
+        }
+      } catch (e) {
+        console.warn("[overlay] elephant play error:", e);
       }
-    } catch (e) {
-      console.warn("[overlay] elephant play error:", e);
     }
-  }
 
-  function startElephant() {
-    if (elephantStarted) return;
-    elephantStarted = true;
-    playElephant();
-    setInterval(playElephant, ELEPHANT_INTERVAL_MS);
-    window.removeEventListener("click", startElephant);
-    window.removeEventListener("keydown", startElephant);
-  }
+    function startElephant() {
+      if (elephantStarted) return;
+      elephantStarted = true;
+      playElephant();
+      setInterval(playElephant, ELEPHANT_INTERVAL_MS);
+      window.removeEventListener("click", startElephant);
+      window.removeEventListener("keydown", startElephant);
+    }
 
-  window.addEventListener("click", startElephant);
-  window.addEventListener("keydown", startElephant);
-  // ===== end periodic elephant sound =====
+    window.addEventListener("click", startElephant);
+    window.addEventListener("keydown", startElephant);
+  }
+  // ===== end elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
   const HYPE_THRESHOLD = 500; // msgs per minute
-  const HYPE_DURATION_MS = 8000; // ~8s visible
-  const HYPE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
-  const SPEED_WINDOW_MS = 60000; // rolling 60s window
+  const HYPE_DURATION_MS = 8000;
+  const HYPE_COOLDOWN_MS = 30 * 60 * 1000;
+  const SPEED_WINDOW_MS = 60000;
 
   const hypeEl = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
@@ -163,10 +233,7 @@
 
     let idx = 0;
     function tryNext() {
-      if (idx >= candidates.length) {
-        console.warn("[overlay] no hype gif found");
-        return;
-      }
+      if (idx >= candidates.length) return;
       const src = candidates[idx++];
       const img = new Image();
       img.onload = () => {
@@ -194,7 +261,6 @@
 
   function triggerHypeGif(now) {
     if (!hypeEl || !hypeReady) return;
-
     lastHypeAt = now;
     if (hypeVisible) return;
 
@@ -223,6 +289,7 @@
     "#779997",
     "#FFF700",
   ];
+
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
@@ -291,8 +358,8 @@
 
           const t = node.nodeValue;
           if (!t || !t.trim()) return NodeFilter.FILTER_REJECT;
-
           if (!isEmojiSegment(t)) return NodeFilter.FILTER_REJECT;
+
           return NodeFilter.FILTER_ACCEPT;
         },
       },
@@ -379,10 +446,11 @@
     let data;
     try {
       data = JSON.parse(ev.data);
-    } catch (e) {
-      console.warn("Bad message JSON", e);
+    } catch {
+      // If server sends non-JSON pings, ignore
       return;
     }
+
     if (!data || data.type !== "chat" || !Array.isArray(data.items)) return;
 
     for (const item of data.items) {
@@ -397,6 +465,7 @@
 
       stack.appendChild(line);
 
+      // animate push-up
       const children = Array.from(stack.children);
       if (children.length > 1) {
         const shift = line.getBoundingClientRect().height + 10;
@@ -412,10 +481,9 @@
 
     const maxKeep =
       parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
-
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
   }
 
-  // Start WS
+  // Start
   connectWS();
 })();
