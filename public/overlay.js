@@ -71,9 +71,7 @@
     let i = 0;
     const tryNext = () => {
       if (!hypeImg || i >= candidates.length) return;
-      hypeImg.onload = () => {
-        hypeReady = true;
-      };
+      hypeImg.onload = () => (hypeReady = true);
       hypeImg.onerror = () => {
         i++;
         tryNext();
@@ -217,9 +215,7 @@
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
-    newLines.forEach((el) => {
-      pushBy += el.offsetHeight + gap;
-    });
+    newLines.forEach((el) => (pushBy += el.offsetHeight + gap));
 
     stack.style.transition = "none";
     stack.style.transform = `translateY(${pushBy}px)`;
@@ -262,9 +258,9 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);        // YouTube emoji <img>
-    replaceUnicodeEmoji(m);         // Unicode -> Noto animated/static -> GitHub -> Twemoji
-    forceEmojiLayoutPx(m);          // ✅ hard baseline + square sizing (no narrow)
+    normalizeEmojiImages(m);      // YouTube emoji <img> -> boxed
+    replaceUnicodeEmoji(m);       // Unicode -> Twemoji first, upgrade to Noto animated if exists
+    forceEmojiLayoutPx(m);        // Hard force sizing/baseline/square
 
     line.appendChild(a);
     line.appendChild(m);
@@ -316,16 +312,19 @@
     });
   }
 
-  // ===== Unicode emoji replacement (ALWAYS ends in an image) =====
+  // =========================
+  // Unicode emoji replacement:
+  // Always image (Twemoji),
+  // then upgrade to Noto animated
+  // =========================
 
-  // Google-hosted Noto assets pattern (animated/static). :contentReference[oaicite:1]{index=1}
+  // Noto animated assets (some missing)
   const NOTO_GSTATIC = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
-
-  // GitHub Noto fallback (static PNGs). :contentReference[oaicite:2]{index=2}
-  const NOTO_GITHUB_PNG_128 = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/";
-
-  // Twemoji PNG fallback (always exists broadly). :contentReference[oaicite:3]{index=3}
+  // Twemoji always-present fallback
   const TWEMOJI_PNG_72 = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/";
+
+  // Cache: emojiText -> resolved animated URL (or null if none)
+  const notoAnimCache = new Map();
 
   const graphemes =
     typeof Intl !== "undefined" && Intl.Segmenter
@@ -351,86 +350,76 @@
     return cps;
   }
 
-  function toHexNoPrefix(cp) {
+  function toHex(cp) {
     return cp.toString(16);
   }
 
-  function toNotoFolder(cps) {
-    return cps.map(toHexNoPrefix).join("_");
+  function twemojiFilename(cps) {
+    return cps.map(toHex).join("-") + ".png";
   }
 
-  function toNotoGithubFilename(cps) {
-    // github format: emoji_u1f468_200d_2696.png
-    return "emoji_u" + cps.map(toHexNoPrefix).join("_") + ".png";
+  function notoFolder(cps) {
+    return cps.map(toHex).join("_");
   }
 
-  function toTwemojiFilename(cps) {
-    // twemoji format: 1f1e6-1f1fd.png etc
-    return cps.map(toHexNoPrefix).join("-") + ".png";
+  function stripVS(cps) {
+    return cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
   }
 
-  function isSkinTone(cp) {
-    return cp >= 0x1f3fb && cp <= 0x1f3ff;
-  }
-
-  function generateVariantCodepointLists(cps) {
-    const uniq = new Map();
+  function generateVariantLists(cps) {
+    const out = [];
+    const seen = new Set();
     const add = (arr) => {
-      const key = arr.join(",");
-      if (!uniq.has(key) && arr.length) uniq.set(key, arr);
+      const k = arr.join(",");
+      if (!seen.has(k) && arr.length) {
+        seen.add(k);
+        out.push(arr);
+      }
     };
-
-    // 1) original
     add(cps);
-
-    // 2) strip variation selectors (FE0F/FE0E)
-    add(cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e));
-
-    // 3) strip skin tone modifiers
-    add(cps.filter((cp) => !isSkinTone(cp)));
-
-    // 4) strip both VS + skin tone
-    add(cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e && !isSkinTone(cp)));
-
-    // 5) if ZWJ sequence exists, try “base emoji only” (first pictographic chunk)
-    // This helps when an animated asset doesn’t exist for the full family/gender combo.
+    add(stripVS(cps));
+    // If ZWJ sequence exists, also try base chunk (helps “closest” if full sequence missing)
     const zwj = 0x200d;
     if (cps.includes(zwj)) {
-      // take everything up to first ZWJ (minus VS)
       const first = [];
       for (const cp of cps) {
         if (cp === zwj) break;
         if (cp === 0xfe0f || cp === 0xfe0e) continue;
-        if (isSkinTone(cp)) continue;
         first.push(cp);
       }
       add(first);
     }
-
-    return Array.from(uniq.values());
+    return out;
   }
 
-  function makeEmojiImgWithFallbacks(emojiText) {
+  function probeFirstWorking(urls) {
+    return new Promise((resolve) => {
+      let i = 0;
+      const img = new Image();
+      img.onload = () => resolve(urls[i]);
+      img.onerror = () => {
+        i++;
+        if (i >= urls.length) resolve(null);
+        else img.src = urls[i];
+      };
+      img.src = urls[i];
+    });
+  }
+
+  // Build a boxed emoji img:
+  // - Start with Twemoji (guaranteed style/scale)
+  // - If Noto animated exists, swap to it (still inside same box)
+  function makeEmojiBox(emojiText) {
     const cps = emojiCodepoints(emojiText);
-    const variants = generateVariantCodepointLists(cps);
+    const variants = generateVariantLists(cps);
 
-    const candidates = [];
-
-    // For each variant, try (animated webp -> gif -> static png gstatic -> github png)
-    for (const v of variants) {
-      const folder = toNotoFolder(v);
-
-      candidates.push(`${NOTO_GSTATIC}${folder}/512.webp`);
-      candidates.push(`${NOTO_GSTATIC}${folder}/512.gif`);
-      candidates.push(`${NOTO_GSTATIC}${folder}/128.png`);
-
-      candidates.push(`${NOTO_GITHUB_PNG_128}${toNotoGithubFilename(v)}`);
-    }
-
-    // Final fallback: Twemoji PNG (still an image)
-    // Use the most “plain” variant (VS/skin stripped) for best chance.
-    const best = variants[variants.length - 1] || cps;
-    candidates.push(`${TWEMOJI_PNG_72}${toTwemojiFilename(best)}`);
+    // Twemoji immediate (no native emoji ever)
+    let twCps = variants[0] || cps;
+    // Twemoji sometimes expects FE0F; try with full cps first, then without VS
+    const twUrls = [
+      TWEMOJI_PNG_72 + twemojiFilename(cps),
+      TWEMOJI_PNG_72 + twemojiFilename(stripVS(cps)),
+    ];
 
     const img = document.createElement("img");
     img.alt = emojiText;
@@ -439,15 +428,40 @@
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    let i = 0;
+    // Set Twemoji first (fallback internal)
+    let twIdx = 0;
     img.onerror = () => {
-      i++;
-      if (i < candidates.length) img.src = candidates[i];
-      else img.replaceWith(document.createTextNode("")); // should basically never happen now
+      twIdx++;
+      if (twIdx < twUrls.length) img.src = twUrls[twIdx];
+      // if even twemoji fails (rare), keep empty but still not native emoji
+      else img.src = "";
     };
+    img.src = twUrls[twIdx];
 
-    img.src = candidates[i];
-    return wrapEmojiNode(img);
+    const boxed = wrapEmojiNode(img);
+
+    // Upgrade to Noto animated if possible (cache result)
+    const cacheKey = emojiText;
+    if (notoAnimCache.has(cacheKey)) {
+      const url = notoAnimCache.get(cacheKey);
+      if (url) img.src = url; // swap to animated
+      return boxed;
+    }
+
+    // Build Noto animation candidates for variants
+    const notoCandidates = [];
+    for (const v of variants) {
+      const folder = notoFolder(v);
+      notoCandidates.push(`${NOTO_GSTATIC}${folder}/512.webp`);
+      notoCandidates.push(`${NOTO_GSTATIC}${folder}/512.gif`);
+    }
+
+    probeFirstWorking(notoCandidates).then((found) => {
+      notoAnimCache.set(cacheKey, found);
+      if (found) img.src = found;
+    });
+
+    return boxed;
   }
 
   function replaceUnicodeEmoji(container) {
@@ -468,7 +482,7 @@
         for (const { segment } of graphemes.segment(text)) {
           const isEmojiSeg = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
           if (isEmojiSeg) {
-            frag.appendChild(makeEmojiImgWithFallbacks(segment));
+            frag.appendChild(makeEmojiBox(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -476,7 +490,6 @@
         }
         if (!changed) return;
       } else {
-        // fallback regex
         const emojiSeq =
           /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?)*/g;
 
@@ -485,7 +498,7 @@
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeEmojiImgWithFallbacks(m[0]));
+          frag.appendChild(makeEmojiBox(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -496,12 +509,12 @@
     });
   }
 
-  // HARD FORCE: fix “top stuck” + “narrow” (square) using pixel sizing
+  // HARD FORCE: fix “top stuck” + “narrow” using pixel sizing (square)
   function forceEmojiLayoutPx(container) {
     const line = container.closest(".line") || container;
     const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
 
-    // tune these if you want:
+    // These values are tuned to stop top-stuck + narrow in OBS
     const boxTopPx = Math.round(fontPx * 0.22);
     const sizePx = Math.round(fontPx * 1.12);
     const boxH = Math.round(fontPx * 1.0);
@@ -519,7 +532,6 @@
 
       const img = box.querySelector("img");
       if (img) {
-        // ✅ Never narrow: force square
         img.style.setProperty("width", `${sizePx}px`, "important");
         img.style.setProperty("height", `${sizePx}px`, "important");
         img.style.setProperty("object-fit", "contain", "important");
@@ -529,6 +541,16 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
+    return String(s).replace(
+      /[&<>"']/g,
+      (m) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[m],
+    );
   }
 })();
