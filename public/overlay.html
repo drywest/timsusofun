@@ -23,10 +23,10 @@
       :root {
         --font-size: 36px;
         --max-keep: 600;
-        --enter-ms: 120ms; /* smooth fade */
+        --enter-ms: 120ms; /* keep smooth fade */
         --push-ms: 140ms;
 
-        /* Stroke tuning */
+        /* Stroke */
         --stroke-width: 0.10em;
         --stroke-color: rgba(0, 0, 0, 0.85);
       }
@@ -54,10 +54,9 @@
         font-weight: 900;
         color: #fff;
 
-        /* ✅ Shadow removed, stroke added */
+        /* ✅ outer stroke instead of shadow */
         text-shadow: none;
         -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
-        paint-order: stroke fill; /* harmless if unsupported */
 
         word-break: break-word;
 
@@ -91,7 +90,7 @@
         margin-right: 0.18em;
       }
 
-      /* Emoji wrapper. JS will ALSO force inline styles in px. */
+      /* Emoji wrapper (JS hard-forces px sizing too) */
       .emoji-box {
         display: inline-flex;
         align-items: flex-end;
@@ -100,9 +99,9 @@
         position: relative;
         line-height: 1;
       }
-
       .emoji-box img {
         display: block;
+        image-rendering: auto;
       }
 
       /* ===== Hype GIF ===== */
@@ -117,11 +116,9 @@
         transition: opacity 220ms ease;
         z-index: 5;
       }
-
       #hype.show {
         opacity: 1;
       }
-
       #hype img {
         display: block;
         max-width: 60%;
