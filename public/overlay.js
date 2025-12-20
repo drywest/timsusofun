@@ -10,13 +10,9 @@
   if (keepParam)
     document.documentElement.style.setProperty("--max-keep", parseInt(keepParam, 10));
 
-  // Prefer ?cid=... if present, else use last path segment
-  const cidFromQuery = params.get("cid") || params.get("channelId");
-  const channelId = cidFromQuery
-    ? decodeURIComponent(cidFromQuery)
-    : decodeURIComponent(location.pathname.split("/").pop());
+  const channelId = decodeURIComponent(location.pathname.split("/").pop());
 
-  // WebSocket to our server (ORIGINAL behavior)
+  // WebSocket to our server
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
   const wsBase = wsProtocol + "//" + location.host;
   const ws = new WebSocket(wsBase + "/ws?cid=" + encodeURIComponent(channelId));
@@ -33,24 +29,11 @@
   });
 
   // ===== Elephant sound every 15 minutes (after interaction) =====
-  // Only enable if /elephant.mp3 actually exists (avoids 404 spam).
   const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
-  let elephantAudio = null;
+  const elephantAudio = new Audio("/elephant.mp3");
+  elephantAudio.preload = "auto";
   let elephantStarted = false;
-
-  async function initElephantIfPresent() {
-    try {
-      const res = await fetch("/elephant.mp3", { method: "HEAD", cache: "no-store" });
-      if (!res.ok) return; // silently disable if missing
-      elephantAudio = new Audio("/elephant.mp3");
-      elephantAudio.preload = "auto";
-    } catch {
-      // ignore
-    }
-  }
-
   function playElephant() {
-    if (!elephantAudio) return;
     try {
       elephantAudio.currentTime = 0;
       const p = elephantAudio.play();
@@ -61,7 +44,6 @@
       console.warn("[overlay] elephant play error:", e);
     }
   }
-
   function startElephant() {
     if (elephantStarted) return;
     elephantStarted = true;
@@ -70,13 +52,8 @@
     window.removeEventListener("click", startElephant);
     window.removeEventListener("keydown", startElephant);
   }
-
-  initElephantIfPresent().then(() => {
-    if (elephantAudio) {
-      window.addEventListener("click", startElephant);
-      window.addEventListener("keydown", startElephant);
-    }
-  });
+  window.addEventListener("click", startElephant);
+  window.addEventListener("keydown", startElephant);
   // ===== end periodic elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
@@ -95,8 +72,6 @@
 
   // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
-    if (!hypeEl || !hypeImg) return;
-
     const override = params.get("hype");
     const dirPath = (function () {
       const p = window.location.pathname;
@@ -141,7 +116,7 @@
   }
 
   function triggerHypeGif(now) {
-    if (!hypeEl) return;
+    // Only show when the image is ready
     if (!hypeReady) return;
 
     lastHypeAt = now;
@@ -191,135 +166,6 @@
     return img;
   }
 
-  // ========= Emoji normalization (FIX) =========
-
-  // Prefer grapheme-safe segmentation when available (fixes 😉 + compound emoji sequences)
-  const graphemeSegmenter =
-    typeof Intl !== "undefined" && Intl.Segmenter
-      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-      : null;
-
-  // Emoji detection: use Extended_Pictographic if supported
-  let isEmoji = null;
-  try {
-    const re = /\p{Extended_Pictographic}/u;
-    isEmoji = (s) => re.test(s);
-  } catch {
-    // Fallback: common emoji ranges (not perfect but safe)
-    const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-    isEmoji = (s) => fallback.test(s);
-  }
-
-  // Make <img> emoji look like text emoji: same height, baseline aligned
-  function normalizeEmojiImages(container) {
-    const imgs = container.querySelectorAll(
-      'img.yt-emoji, img.emoji, img[src*="ggpht"], img[src*="googleusercontent"]',
-    );
-
-    imgs.forEach((oldImg) => {
-      const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
-      const alt = oldImg.getAttribute("alt") || ":emoji:";
-
-      const newImg = document.createElement("img");
-      newImg.alt = alt;
-      newImg.className = "emoji";
-
-      // Inline styling so it works even if CSS is missing/overridden
-      newImg.style.height = "1.15em";
-      newImg.style.width = "auto";
-      newImg.style.display = "inline-block";
-      newImg.style.lineHeight = "1";
-      newImg.style.verticalAlign = "-0.22em";
-
-      newImg.decoding = "async";
-      newImg.loading = "eager";
-      newImg.referrerPolicy = "no-referrer";
-      newImg.crossOrigin = "anonymous";
-
-      newImg.onerror = () => {
-        oldImg.replaceWith(document.createTextNode(alt));
-      };
-
-      newImg.src = src;
-      oldImg.replaceWith(newImg);
-    });
-  }
-
-  // Wrap native Unicode emoji into <span> with proper sizing/baseline
-  function normalizeUnicodeEmoji(container) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    const nodes = [];
-    let n;
-    while ((n = walker.nextNode())) nodes.push(n);
-
-    const fallbackEmojiSeq = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/g;
-
-    nodes.forEach((node) => {
-      const text = node.nodeValue;
-      if (!text) return;
-
-      // Quick skip if no emoji likely present
-      if (!isEmoji(text)) return;
-
-      const frag = document.createDocumentFragment();
-
-      if (graphemeSegmenter) {
-        for (const { segment } of graphemeSegmenter.segment(text)) {
-          if (isEmoji(segment)) {
-            const span = document.createElement("span");
-            span.className = "emoji emoji-char";
-            span.textContent = segment;
-
-            // Inline styles to fix “thin/small/stuck at top”
-            span.style.display = "inline-block";
-            span.style.fontSize = "1.15em";
-            span.style.lineHeight = "1";
-            span.style.verticalAlign = "-0.22em";
-            span.style.fontWeight = "400";
-            span.style.fontFamily =
-              '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
-
-            frag.appendChild(span);
-          } else {
-            frag.appendChild(document.createTextNode(segment));
-          }
-        }
-      } else {
-        // Fallback: split by a basic emoji matcher
-        fallbackEmojiSeq.lastIndex = 0;
-        if (!fallbackEmojiSeq.test(text)) return;
-        fallbackEmojiSeq.lastIndex = 0;
-
-        let last = 0;
-        let match;
-        while ((match = fallbackEmojiSeq.exec(text))) {
-          const idx = match.index;
-
-          if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-
-          const span = document.createElement("span");
-          span.className = "emoji emoji-char";
-          span.textContent = match[0];
-
-          span.style.display = "inline-block";
-          span.style.fontSize = "1.15em";
-          span.style.lineHeight = "1";
-          span.style.verticalAlign = "-0.22em";
-          span.style.fontWeight = "400";
-          span.style.fontFamily =
-            '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
-
-          frag.appendChild(span);
-          last = idx + match[0].length;
-        }
-
-        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-      }
-
-      node.parentNode.replaceChild(frag, node);
-    });
-  }
-
   function buildLine(author, html, isMod, isOwner, isMember, memberBadges) {
     const line = document.createElement("div");
     line.className = "line";
@@ -341,14 +187,120 @@
     m.className = "message";
     m.innerHTML = html || "";
 
-    // Apply emoji fixes
+    // Normalize any emoji images inside message span
     normalizeEmojiImages(m);
+    // Fix native Unicode emoji like 😉
     normalizeUnicodeEmoji(m);
 
     line.appendChild(a);
     line.appendChild(m);
 
     return line;
+  }
+
+  function normalizeEmojiImages(container) {
+    const candidates = container.querySelectorAll(
+      'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
+    );
+    candidates.forEach((oldImg) => {
+      const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
+      const alt = oldImg.getAttribute("alt") || ":emoji:";
+      const newImg = document.createElement("img");
+      newImg.alt = alt;
+      newImg.className = "emoji";
+      // Bigger + properly aligned to match text height
+      newImg.style.height = "1.35em";
+      newImg.style.width = "auto";
+      newImg.style.verticalAlign = "-0.25em";
+      newImg.decoding = "async";
+      newImg.loading = "eager";
+      newImg.referrerPolicy = "no-referrer";
+      newImg.crossOrigin = "anonymous";
+      newImg.onerror = () => {
+        const span = document.createElement("span");
+        span.textContent = alt;
+        oldImg.replaceWith(span);
+      };
+      newImg.src = src;
+      oldImg.replaceWith(newImg);
+    });
+  }
+
+  // Wrap native Unicode emoji so they visually match text height (FIXED)
+  function normalizeUnicodeEmoji(container) {
+    // Use grapheme segmentation when available (keeps emoji intact)
+    const seg =
+      typeof Intl !== "undefined" && Intl.Segmenter
+        ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+        : null;
+
+    // Emoji detector (best effort)
+    let isEmoji = null;
+    try {
+      const re = /\p{Extended_Pictographic}/u;
+      isEmoji = (s) => re.test(s);
+    } catch {
+      const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
+      isEmoji = (s) => fallback.test(s);
+    }
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let n;
+    while ((n = walker.nextNode())) nodes.push(n);
+
+    // Fallback matcher if Segmenter missing
+    const emojiSeq = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/g;
+
+    function makeEmojiSpan(txt) {
+      const span = document.createElement("span");
+      span.className = "emoji emoji-char";
+      span.textContent = txt;
+
+      // IMPORTANT: fixes “thin/small/top stuck”
+      span.style.display = "inline-block";
+      span.style.fontSize = "1.15em";
+      span.style.lineHeight = "1";
+      span.style.verticalAlign = "-0.22em";
+      span.style.fontWeight = "400";
+      span.style.fontFamily =
+        '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",system-ui,sans-serif';
+
+      return span;
+    }
+
+    nodes.forEach((node) => {
+      const text = node.nodeValue;
+      if (!text) return;
+
+      // Quick skip
+      if (!isEmoji(text)) return;
+
+      const frag = document.createDocumentFragment();
+
+      if (seg) {
+        for (const { segment } of seg.segment(text)) {
+          if (isEmoji(segment)) frag.appendChild(makeEmojiSpan(segment));
+          else frag.appendChild(document.createTextNode(segment));
+        }
+      } else {
+        emojiSeq.lastIndex = 0;
+        if (!emojiSeq.test(text)) return;
+        emojiSeq.lastIndex = 0;
+
+        let last = 0;
+        let match;
+        while ((match = emojiSeq.exec(text))) {
+          const idx = match.index;
+          if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+          frag.appendChild(makeEmojiSpan(match[0]));
+          last = idx + match[0].length;
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      }
+
+      node.parentNode.replaceChild(frag, node);
+    });
   }
 
   ws.addEventListener("message", (ev) => {
@@ -391,10 +343,7 @@
     }
 
     const maxKeep =
-      parseInt(
-        getComputedStyle(document.documentElement).getPropertyValue("--max-keep"),
-      ) || 600;
-
+      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
     while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
   });
 })();
