@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>YouTube Chat Overlay</title>
+    <title>Chat Overlay</title>
 
     <link
       rel="stylesheet"
@@ -23,12 +23,10 @@
       :root {
         --font-size: 36px;
         --max-keep: 600;
-        --gap: 10px;
         --enter-ms: 90ms;
         --push-ms: 140ms;
       }
 
-      /* Use a font stack that includes color emoji */
       body {
         font-family:
           "Lato",
@@ -49,7 +47,7 @@
         flex-direction: column;
         justify-content: flex-end;
         padding: 18px;
-        gap: var(--gap);
+        gap: 10px;
         overflow: hidden;
         will-change: transform;
         transition: transform var(--push-ms) ease-out;
@@ -57,7 +55,7 @@
 
       .line {
         font-size: var(--font-size);
-        line-height: 1.22; /* important: gives emojis room */
+        line-height: 1.24; /* IMPORTANT: gives emoji room so it doesn't clip */
         font-weight: 900;
         color: #fff;
         text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45), 0 10px 24px rgba(0, 0, 0, 0.28);
@@ -93,32 +91,34 @@
         margin-right: 0.18em;
       }
 
-      /* ========= Emoji FIX ========= */
+      /* =========================
+         EMOJI FIX (critical)
+         ========================= */
 
-      /* Only apply image sizing rules to <img>, not spans */
+      /* Only style emoji IMAGES with these rules */
       img.emoji,
       img.emoji-img {
-        height: 1em;
+        height: 1.15em;
         width: auto;
         display: inline-block;
-        vertical-align: -0.18em;
+        vertical-align: -0.25em;
       }
 
-      /* Unicode emoji span (the real fix) */
+      /* Unicode emoji SPANS (the thing that was broken) */
       .emoji-char {
         display: inline-block;
 
-        /* Make it match text height */
-        font-size: 1.05em;
+        /* Make it same visual size as images */
+        font-size: 1.15em;
         line-height: 1;
 
-        /* Prevent “thin” look from inheriting 900 */
-        font-weight: 400;
+        /* prevents the “thin/small” look from inheriting 900 */
+        font-weight: 400 !important;
 
-        /* Baseline alignment so it doesn't stick to the top */
-        vertical-align: -0.18em;
+        /* baseline correction so it doesn't stick to the top */
+        vertical-align: -0.30em;
 
-        /* Force emoji-capable fonts */
+        /* emoji-capable fonts */
         font-family:
           "Apple Color Emoji",
           "Segoe UI Emoji",
@@ -127,7 +127,11 @@
           -apple-system,
           "Segoe UI",
           Arial,
-          sans-serif;
+          sans-serif !important;
+
+        /* extra nudge that fixes OBS/Chromium odd baselines */
+        position: relative;
+        top: 0.06em;
       }
 
       /* ===== Hype GIF ===== */
@@ -163,7 +167,6 @@
       <img id="hype-img" alt="hype" />
     </div>
 
-    <!-- absolute path so it works on /UC... routes -->
     <script src="/overlay.js"></script>
   </body>
 </html>
