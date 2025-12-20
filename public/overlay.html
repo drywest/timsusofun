@@ -23,12 +23,12 @@
       :root {
         --font-size: 36px;
         --max-keep: 600;
-        --enter-ms: 120ms; /* keep smooth fade */
+        --enter-ms: 120ms; /* smooth fade */
         --push-ms: 140ms;
 
-        /* Stroke */
-        --stroke-width: 0.10em;
-        --stroke-color: rgba(0, 0, 0, 0.85);
+        /* OUTLINE tuning (change these) */
+        --outline-size: 2px; /* ✅ stroke thickness */
+        --outline-color: rgba(0, 0, 0, 0.9);
       }
 
       body {
@@ -54,9 +54,19 @@
         font-weight: 900;
         color: #fff;
 
-        /* ✅ outer stroke instead of shadow */
-        text-shadow: none;
-        -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
+        /* Primary outline (works in Chromium/OBS) */
+        -webkit-text-stroke: var(--outline-size) var(--outline-color);
+
+        /* Fallback outline via multi-shadow (also looks like a stroke) */
+        text-shadow:
+          calc(var(--outline-size) * 1) 0 0 var(--outline-color),
+          calc(var(--outline-size) * -1) 0 0 var(--outline-color),
+          0 calc(var(--outline-size) * 1) 0 var(--outline-color),
+          0 calc(var(--outline-size) * -1) 0 var(--outline-color),
+          calc(var(--outline-size) * 1) calc(var(--outline-size) * 1) 0 var(--outline-color),
+          calc(var(--outline-size) * -1) calc(var(--outline-size) * 1) 0 var(--outline-color),
+          calc(var(--outline-size) * 1) calc(var(--outline-size) * -1) 0 var(--outline-color),
+          calc(var(--outline-size) * -1) calc(var(--outline-size) * -1) 0 var(--outline-color);
 
         word-break: break-word;
 
