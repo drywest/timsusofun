@@ -25,10 +25,6 @@
         --max-keep: 600;
         --enter-ms: 120ms; /* smooth fade */
         --push-ms: 140ms;
-
-        /* OUTLINE tuning (change these) */
-        --outline-size: 2px; /* ✅ stroke thickness */
-        --outline-color: rgba(0, 0, 0, 0.9);
       }
 
       body {
@@ -54,27 +50,15 @@
         font-weight: 900;
         color: #fff;
 
-        /* Primary outline (works in Chromium/OBS) */
-        -webkit-text-stroke: var(--outline-size) var(--outline-color);
-
-        /* Fallback outline via multi-shadow (also looks like a stroke) */
-        text-shadow:
-          calc(var(--outline-size) * 1) 0 0 var(--outline-color),
-          calc(var(--outline-size) * -1) 0 0 var(--outline-color),
-          0 calc(var(--outline-size) * 1) 0 var(--outline-color),
-          0 calc(var(--outline-size) * -1) 0 var(--outline-color),
-          calc(var(--outline-size) * 1) calc(var(--outline-size) * 1) 0 var(--outline-color),
-          calc(var(--outline-size) * -1) calc(var(--outline-size) * 1) 0 var(--outline-color),
-          calc(var(--outline-size) * 1) calc(var(--outline-size) * -1) 0 var(--outline-color),
-          calc(var(--outline-size) * -1) calc(var(--outline-size) * -1) 0 var(--outline-color);
+        /* ✅ shadow back */
+        -webkit-text-stroke: 0;
+        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55), 0 10px 24px rgba(0, 0, 0, 0.30);
 
         word-break: break-word;
 
         opacity: 0;
         transform: translateY(8px);
-        transition:
-          transform var(--enter-ms) ease-out,
-          opacity var(--enter-ms) ease-out;
+        transition: transform var(--enter-ms) ease-out, opacity var(--enter-ms) ease-out;
       }
 
       .line.enter {
