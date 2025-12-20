@@ -28,23 +28,19 @@
       elephantAudio.currentTime = 0;
       const p = elephantAudio.play();
       if (p && typeof p.catch === "function") {
-        p.catch((err) => {
-          console.warn("[overlay] elephant.mp3 play blocked or failed:", err);
-        });
+        p.catch((err) => console.warn("[overlay] elephant.mp3 play blocked or failed:", err));
       }
     } catch (err) {
       console.warn("[overlay] elephant.mp3 play error:", err);
     }
   }
-
   setInterval(playElephant, ELEPHANT_INTERVAL_MS);
-  // ===== end periodic elephant sound =====
 
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
-  const HYPE_THRESHOLD = 500; // msgs per minute
-  const HYPE_DURATION_MS = 8000; // ~8s visible
-  const HYPE_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
-  const SPEED_WINDOW_MS = 60000; // rolling 60s window
+  const HYPE_THRESHOLD = 500;
+  const HYPE_DURATION_MS = 8000;
+  const HYPE_COOLDOWN_MS = 30 * 60 * 1000;
+  const SPEED_WINDOW_MS = 60000;
 
   const hypeEl = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
@@ -54,7 +50,6 @@
   let lastHypeAt = 0;
   let hypeReady = false;
 
-  // Robust GIF path resolution (tries multiple locations and only shows once loaded)
   (function resolveHypeGif() {
     const override = params.get("hype");
     const dirPath = (function () {
@@ -95,8 +90,10 @@
   function recordMessages(count) {
     const now = Date.now();
     for (let i = 0; i < count; i++) arrivalTimes.push(now);
+
     const cutoff = now - SPEED_WINDOW_MS;
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
+
     const perMinute = arrivalTimes.length;
     if (perMinute > HYPE_THRESHOLD) triggerHype(now);
   }
@@ -119,7 +116,6 @@
       hypeTimer = null;
     }, HYPE_DURATION_MS);
   }
-  // ===== end hype GIF =====
 
   // Stable vibrant colors
   const colorCache = new Map();
@@ -142,8 +138,7 @@
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
-    for (let i = 0; i < name.length; i++)
-      h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+    for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
     const c = palette[Math.abs(h) % palette.length];
     colorCache.set(name, c);
     return c;
@@ -205,7 +200,6 @@
     for (const payload of items) {
       const { author, html, type } = payload || {};
       if (type !== "system" && isBot(author)) continue;
-
       if (type !== "system") nonSystemCount++;
 
       const line = buildLine(
@@ -223,11 +217,11 @@
       newLines.push(line);
     }
     if (!newLines.length) return;
-
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
     stack.appendChild(fragment);
 
+    // push-up
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
@@ -276,8 +270,9 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);   // YouTube emoji <img>
-    normalizeUnicodeEmoji(m);  // Unicode emoji -> Twemoji <img>
+    normalizeEmojiImages(m);      // YouTube emoji <img> -> forced box
+    normalizeUnicodeEmoji(m);     // Unicode emoji -> forced box + Twemoji
+    forceAnyRemainingEmoji(m);    // final hammer: force styles on anything left
 
     line.appendChild(a);
     line.appendChild(m);
@@ -299,30 +294,70 @@
     return img;
   }
 
-  // YouTube custom emoji images
+  // ================
+  // EMOJI: HARD FORCE
+  // ================
+
+  function forceImportantStyle(el, prop, value) {
+    try {
+      el.style.setProperty(prop, value, "important");
+    } catch {
+      el.style[prop] = value;
+    }
+  }
+
+  function wrapInEmojiBox(nodeToWrap) {
+    const box = document.createElement("span");
+    box.className = "emoji-box";
+
+    // FORCE wrapper styles (in case CSS is overridden)
+    forceImportantStyle(box, "display", "inline-flex");
+    forceImportantStyle(box, "align-items", "flex-end");
+    forceImportantStyle(box, "justify-content", "center");
+    forceImportantStyle(box, "height", "1em");
+    forceImportantStyle(box, "line-height", "1");
+    forceImportantStyle(box, "vertical-align", "baseline");
+    forceImportantStyle(box, "position", "relative");
+    forceImportantStyle(box, "top", "0.16em");
+
+    box.appendChild(nodeToWrap);
+    return box;
+  }
+
+  function forceEmojiImg(img) {
+    forceImportantStyle(img, "height", "1.2em");
+    forceImportantStyle(img, "width", "1.2em");
+    forceImportantStyle(img, "display", "block");
+    forceImportantStyle(img, "transform", "translateY(0.02em)");
+  }
+
+  // YouTube emoji <img> -> put into forced emoji box
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
+
     candidates.forEach((oldImg) => {
       const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
       const alt = oldImg.getAttribute("alt") || ":emoji:";
 
-      const newImg = document.createElement("img");
-      newImg.alt = alt;
-      newImg.className = "emoji-img";
-      newImg.decoding = "async";
-      newImg.loading = "eager";
-      newImg.referrerPolicy = "no-referrer";
-      newImg.crossOrigin = "anonymous";
-      newImg.onerror = () => oldImg.replaceWith(document.createTextNode(alt));
-      newImg.src = src;
+      const img = document.createElement("img");
+      img.alt = alt;
+      img.decoding = "async";
+      img.loading = "eager";
+      img.referrerPolicy = "no-referrer";
+      img.crossOrigin = "anonymous";
+      img.src = src;
 
-      oldImg.replaceWith(newImg);
+      forceEmojiImg(img);
+      const box = wrapInEmojiBox(img);
+
+      img.onerror = () => box.replaceWith(document.createTextNode(alt));
+      oldImg.replaceWith(box);
     });
   }
 
-  // ===== Unicode emoji -> Twemoji SVG images (this fixes your "stuck to top" forever) =====
+  // Unicode emoji -> Twemoji SVG img -> forced emoji box
   const TWEMOJI_BASE = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
 
   function toCodePointSequence(str) {
@@ -335,7 +370,6 @@
     return cps.join("-");
   }
 
-  // Segmenter keeps ZWJ sequences together (family emojis, etc.)
   const graphemes =
     typeof Intl !== "undefined" && Intl.Segmenter
       ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -350,25 +384,22 @@
     isEmoji = (s) => fallback.test(s);
   }
 
-  function makeTwemojiImg(emojiText) {
+  function makeTwemojiBox(emojiText) {
     const img = document.createElement("img");
-    img.className = "emoji-unicode";
     img.alt = emojiText;
     img.decoding = "async";
     img.loading = "eager";
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    // Build URL like: 1f480.svg etc
     const code = toCodePointSequence(emojiText);
     img.src = TWEMOJI_BASE + code + ".svg";
 
-    // If CDN fails, fall back to the raw emoji text
-    img.onerror = () => {
-      img.replaceWith(document.createTextNode(emojiText));
-    };
+    forceEmojiImg(img);
+    const box = wrapInEmojiBox(img);
 
-    return img;
+    img.onerror = () => box.replaceWith(document.createTextNode(emojiText));
+    return box;
   }
 
   function normalizeUnicodeEmoji(container) {
@@ -376,18 +407,6 @@
     const nodes = [];
     let n;
     while ((n = walker.nextNode())) nodes.push(n);
-
-    // fallback matcher (if Segmenter missing)
-    let emojiSeq;
-    try {
-      emojiSeq = new RegExp(
-        "\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?(?:\\u200D\\p{Extended_Pictographic}(?:\\uFE0F|\\uFE0E)?)*",
-        "gu",
-      );
-    } catch {
-      emojiSeq =
-        /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|[\uFE0E])?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|[\uFE0E])?)*/g;
-    }
 
     nodes.forEach((node) => {
       const text = node.nodeValue;
@@ -402,7 +421,7 @@
         let changed = false;
         for (const { segment } of graphemes.segment(text)) {
           if (isEmoji(segment)) {
-            frag.appendChild(makeTwemojiImg(segment));
+            frag.appendChild(makeTwemojiBox(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -410,13 +429,16 @@
         }
         if (!changed) return;
       } else {
+        // fallback: simple match
+        const emojiSeq =
+          /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F)?)*/g;
+
         let last = 0;
-        emojiSeq.lastIndex = 0;
         let m;
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeTwemojiImg(m[0]));
+          frag.appendChild(makeTwemojiBox(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -427,17 +449,25 @@
     });
   }
 
+  // Final hammer: if anything slips through, force it down anyway
+  function forceAnyRemainingEmoji(container) {
+    const imgs = container.querySelectorAll("img");
+    imgs.forEach((img) => {
+      // If some global CSS is messing with images, this forces it back.
+      forceImportantStyle(img, "vertical-align", "baseline");
+    });
+
+    // If someone already inserted spans for emoji earlier, force them too.
+    const spans = container.querySelectorAll("span.emoji, span.emoji-char");
+    spans.forEach((sp) => {
+      forceImportantStyle(sp, "position", "relative");
+      forceImportantStyle(sp, "top", "0.16em");
+      forceImportantStyle(sp, "display", "inline-block");
+      forceImportantStyle(sp, "line-height", "1");
+    });
+  }
+
   function escapeHtml(s) {
-    return String(s).replace(
-      /[&<>"']/g,
-      (m) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[m],
-    );
+    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
   }
 })();
