@@ -71,8 +71,13 @@
     let i = 0;
     const tryNext = () => {
       if (!hypeImg || i >= candidates.length) return;
-      hypeImg.onload = () => { hypeReady = true; };
-      hypeImg.onerror = () => { i++; tryNext(); };
+      hypeImg.onload = () => {
+        hypeReady = true;
+      };
+      hypeImg.onerror = () => {
+        i++;
+        tryNext();
+      };
       hypeImg.decoding = "async";
       hypeImg.referrerPolicy = "no-referrer";
       hypeImg.crossOrigin = "anonymous";
@@ -111,15 +116,25 @@
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
-    "#FF4D4D", "#FF8A4D", "#FFCA3A", "#8AC926", "#52D1DC",
-    "#4D96FF", "#B04DFF", "#FF4DB7", "#32D583", "#F97066",
-    "#12B0E8", "#7A5AF8", "#EE46BC", "#16BDCA",
+    "#FF4D4D",
+    "#FF8A4D",
+    "#FFCA3A",
+    "#8AC926",
+    "#52D1DC",
+    "#4D96FF",
+    "#B04DFF",
+    "#FF4DB7",
+    "#32D583",
+    "#F97066",
+    "#12B0E8",
+    "#7A5AF8",
+    "#EE46BC",
+    "#16BDCA",
   ];
   function nameColor(name) {
     if (colorCache.has(name)) return colorCache.get(name);
     let h = 0;
-    for (let i = 0; i < name.length; i++)
-      h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
+    for (let i = 0; i < name.length; i++) h = (Math.imul(31, h) + name.charCodeAt(i)) | 0;
     const c = palette[Math.abs(h) % palette.length];
     colorCache.set(name, c);
     return c;
@@ -186,7 +201,7 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // keep smooth fade
+      // smooth fade (keep it)
       line.style.opacity = "0";
       line.style.transform = "translateY(8px)";
       fragment.appendChild(line);
@@ -202,7 +217,9 @@
     const cs = getComputedStyle(stack);
     const gap = parseFloat(cs.rowGap || cs.gap || "0") || 0;
     let pushBy = 0;
-    newLines.forEach((el) => { pushBy += el.offsetHeight + gap; });
+    newLines.forEach((el) => {
+      pushBy += el.offsetHeight + gap;
+    });
 
     stack.style.transition = "none";
     stack.style.transform = `translateY(${pushBy}px)`;
@@ -213,7 +230,10 @@
     requestAnimationFrame(() => {
       newLines.forEach((el) => el.classList.add("enter"));
       setTimeout(() => {
-        newLines.forEach((el) => { el.style.opacity = ""; el.style.transform = ""; });
+        newLines.forEach((el) => {
+          el.style.opacity = "";
+          el.style.transform = "";
+        });
       }, 200);
     });
 
@@ -242,9 +262,9 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    normalizeEmojiImages(m);          // YouTube emoji <img>
-    replaceUnicodeEmojiWithNoto(m);   // Unicode -> Noto animated/static -> Twemoji
-    forceEmojiLayoutPx(m);            // HARD FORCE: square + baseline in px
+    normalizeEmojiImages(m);        // YouTube emoji <img>
+    replaceUnicodeEmoji(m);         // Unicode -> Noto animated/static -> GitHub -> Twemoji
+    forceEmojiLayoutPx(m);          // ✅ hard baseline + square sizing (no narrow)
 
     line.appendChild(a);
     line.appendChild(m);
@@ -266,7 +286,6 @@
     return img;
   }
 
-  // Wrap node in emoji-box
   function wrapEmojiNode(node) {
     const box = document.createElement("span");
     box.className = "emoji-box";
@@ -297,9 +316,16 @@
     });
   }
 
-  // ========= Unicode emoji -> Noto Emoji Animation (with REAL fallbacks) =========
-  const NOTO_BASE = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
-  const TWEMOJI_BASE = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
+  // ===== Unicode emoji replacement (ALWAYS ends in an image) =====
+
+  // Google-hosted Noto assets pattern (animated/static). :contentReference[oaicite:1]{index=1}
+  const NOTO_GSTATIC = "https://fonts.gstatic.com/s/e/notoemoji/latest/";
+
+  // GitHub Noto fallback (static PNGs). :contentReference[oaicite:2]{index=2}
+  const NOTO_GITHUB_PNG_128 = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/png/128/";
+
+  // Twemoji PNG fallback (always exists broadly). :contentReference[oaicite:3]{index=3}
+  const TWEMOJI_PNG_72 = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/";
 
   const graphemes =
     typeof Intl !== "undefined" && Intl.Segmenter
@@ -325,32 +351,86 @@
     return cps;
   }
 
-  function notoCodeFromCps(cps) {
-    return cps.map((cp) => cp.toString(16)).join("_");
-  }
-  function twemojiCodeFromCps(cps) {
-    return cps.map((cp) => cp.toString(16)).join("-");
+  function toHexNoPrefix(cp) {
+    return cp.toString(16);
   }
 
-  function makeNotoEmojiBox(emojiText) {
-    const cps = emojiCodepoints(emojiText);
-    const cpsNoFe0f = cps.filter((cp) => cp !== 0xfe0f);
+  function toNotoFolder(cps) {
+    return cps.map(toHexNoPrefix).join("_");
+  }
 
-    const codes = [
-      notoCodeFromCps(cps),
-      notoCodeFromCps(cpsNoFe0f),
-    ].filter((v, i, a) => v && a.indexOf(v) === i);
+  function toNotoGithubFilename(cps) {
+    // github format: emoji_u1f468_200d_2696.png
+    return "emoji_u" + cps.map(toHexNoPrefix).join("_") + ".png";
+  }
 
-    const candidates = [];
-    for (const code of codes) {
-      candidates.push(`${NOTO_BASE}${code}/512.webp`);
-      candidates.push(`${NOTO_BASE}${code}/512.gif`);
-      candidates.push(`${NOTO_BASE}${code}/128.png`);
+  function toTwemojiFilename(cps) {
+    // twemoji format: 1f1e6-1f1fd.png etc
+    return cps.map(toHexNoPrefix).join("-") + ".png";
+  }
+
+  function isSkinTone(cp) {
+    return cp >= 0x1f3fb && cp <= 0x1f3ff;
+  }
+
+  function generateVariantCodepointLists(cps) {
+    const uniq = new Map();
+    const add = (arr) => {
+      const key = arr.join(",");
+      if (!uniq.has(key) && arr.length) uniq.set(key, arr);
+    };
+
+    // 1) original
+    add(cps);
+
+    // 2) strip variation selectors (FE0F/FE0E)
+    add(cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e));
+
+    // 3) strip skin tone modifiers
+    add(cps.filter((cp) => !isSkinTone(cp)));
+
+    // 4) strip both VS + skin tone
+    add(cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e && !isSkinTone(cp)));
+
+    // 5) if ZWJ sequence exists, try “base emoji only” (first pictographic chunk)
+    // This helps when an animated asset doesn’t exist for the full family/gender combo.
+    const zwj = 0x200d;
+    if (cps.includes(zwj)) {
+      // take everything up to first ZWJ (minus VS)
+      const first = [];
+      for (const cp of cps) {
+        if (cp === zwj) break;
+        if (cp === 0xfe0f || cp === 0xfe0e) continue;
+        if (isSkinTone(cp)) continue;
+        first.push(cp);
+      }
+      add(first);
     }
 
-    // final fallback: Twemoji svg (still image)
-    const tw = twemojiCodeFromCps(cpsNoFe0f.length ? cpsNoFe0f : cps);
-    candidates.push(`${TWEMOJI_BASE}${tw}.svg`);
+    return Array.from(uniq.values());
+  }
+
+  function makeEmojiImgWithFallbacks(emojiText) {
+    const cps = emojiCodepoints(emojiText);
+    const variants = generateVariantCodepointLists(cps);
+
+    const candidates = [];
+
+    // For each variant, try (animated webp -> gif -> static png gstatic -> github png)
+    for (const v of variants) {
+      const folder = toNotoFolder(v);
+
+      candidates.push(`${NOTO_GSTATIC}${folder}/512.webp`);
+      candidates.push(`${NOTO_GSTATIC}${folder}/512.gif`);
+      candidates.push(`${NOTO_GSTATIC}${folder}/128.png`);
+
+      candidates.push(`${NOTO_GITHUB_PNG_128}${toNotoGithubFilename(v)}`);
+    }
+
+    // Final fallback: Twemoji PNG (still an image)
+    // Use the most “plain” variant (VS/skin stripped) for best chance.
+    const best = variants[variants.length - 1] || cps;
+    candidates.push(`${TWEMOJI_PNG_72}${toTwemojiFilename(best)}`);
 
     const img = document.createElement("img");
     img.alt = emojiText;
@@ -359,18 +439,18 @@
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    let idx = 0;
+    let i = 0;
     img.onerror = () => {
-      idx++;
-      if (idx < candidates.length) img.src = candidates[idx];
-      else img.replaceWith(document.createTextNode("")); // absolute last resort: blank
+      i++;
+      if (i < candidates.length) img.src = candidates[i];
+      else img.replaceWith(document.createTextNode("")); // should basically never happen now
     };
 
-    img.src = candidates[idx];
+    img.src = candidates[i];
     return wrapEmojiNode(img);
   }
 
-  function replaceUnicodeEmojiWithNoto(container) {
+  function replaceUnicodeEmoji(container) {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
     const nodes = [];
     let n;
@@ -388,7 +468,7 @@
         for (const { segment } of graphemes.segment(text)) {
           const isEmojiSeg = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
           if (isEmojiSeg) {
-            frag.appendChild(makeNotoEmojiBox(segment));
+            frag.appendChild(makeEmojiImgWithFallbacks(segment));
             changed = true;
           } else {
             frag.appendChild(document.createTextNode(segment));
@@ -405,7 +485,7 @@
         while ((m = emojiSeq.exec(text))) {
           const idx = m.index;
           if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeNotoEmojiBox(m[0]));
+          frag.appendChild(makeEmojiImgWithFallbacks(m[0]));
           last = idx + m[0].length;
         }
         if (last === 0) return;
@@ -416,16 +496,15 @@
     });
   }
 
-  // ✅ HARD FORCE: stop “top stuck” AND stop “narrow”
-  // Make every emoji image a SQUARE with explicit px width/height,
-  // and push the wrapper DOWN by a px baseline offset.
+  // HARD FORCE: fix “top stuck” + “narrow” (square) using pixel sizing
   function forceEmojiLayoutPx(container) {
     const line = container.closest(".line") || container;
     const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
 
-    const boxTopPx = Math.round(fontPx * 0.22);    // push down (fix top-stuck)
-    const sizePx = Math.round(fontPx * 1.12);      // emoji size
-    const boxH = Math.round(fontPx * 1.00);        // wrapper height
+    // tune these if you want:
+    const boxTopPx = Math.round(fontPx * 0.22);
+    const sizePx = Math.round(fontPx * 1.12);
+    const boxH = Math.round(fontPx * 1.0);
 
     const boxes = container.querySelectorAll(".emoji-box");
     boxes.forEach((box) => {
@@ -440,7 +519,7 @@
 
       const img = box.querySelector("img");
       if (img) {
-        // THE “NOT NARROW” FIX: force square
+        // ✅ Never narrow: force square
         img.style.setProperty("width", `${sizePx}px`, "important");
         img.style.setProperty("height", `${sizePx}px`, "important");
         img.style.setProperty("object-fit", "contain", "important");
@@ -450,16 +529,6 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(
-      /[&<>"']/g,
-      (m) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[m],
-    );
+    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
   }
 })();
