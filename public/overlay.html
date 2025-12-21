@@ -83,16 +83,26 @@
         margin-right: 0.18em;
       }
 
-      /* Emoji wrapper (JS hard-forces px sizing too) */
+      /* Emoji wrapper - ensures proper sizing and alignment */
       .emoji-box {
         display: inline-block;
         position: relative;
         line-height: 1;
-        vertical-align: baseline;
+        vertical-align: middle;
       }
       .emoji-box img {
         display: block;
         image-rendering: auto;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+      }
+      
+      /* Fallback for failed emoji images */
+      .emoji-fallback {
+        display: inline-block;
+        font-size: 1em;
+        line-height: 1;
+        vertical-align: middle;
       }
 
       /* ===== Hype GIF ===== */
