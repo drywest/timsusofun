@@ -178,25 +178,14 @@
   // =========================
   // EMOJI.ARANJA.COM conversion (emoji -> PNG)
   // =========================
-  const ARANJA_BASE = "https://emoji.aranja.com/emojis";
+  const ARANJA_BASE = "https://emoji.aranja.com/static/emoji-data";
   const ARANJA_STYLE = (params.get("emojiStyle") || "apple").toLowerCase();
   const ARANJA_STYLE_SAFE = ["apple", "google", "twitter", "facebook"].includes(ARANJA_STYLE)
     ? ARANJA_STYLE
     : "apple";
 
-  let hasPictographic = null;
-  try {
-    const re = /\p{Extended_Pictographic}/u;
-    hasPictographic = (s) => re.test(s);
-  } catch {
-    const fallback = /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])/;
-    hasPictographic = (s) => fallback.test(s);
-  }
-
-  const graphemes =
-    typeof Intl !== "undefined" && Intl.Segmenter
-      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-      : null;
+  // Improved emoji detection regex - catches more emoji patterns
+  const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}][\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}]*/gu;
 
   function emojiCodepoints(emojiText) {
     const cps = [];
@@ -208,76 +197,16 @@
     return cps;
   }
 
-  function stripVS(cps) {
-    return cps.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
+  function toHex(codepoint) {
+    return codepoint.toString(16).toLowerCase();
   }
 
-  function stripSkin(cps) {
-    return cps.filter((cp) => !(cp >= 0x1f3fb && cp <= 0x1f3ff));
-  }
-
-  function firstChunkBeforeZWJ(cps) {
-    const zwj = 0x200d;
-    const idx = cps.indexOf(zwj);
-    if (idx === -1) return cps;
-    return cps.slice(0, idx);
-  }
-
-  function hexNoPad(cp) {
-    return cp.toString(16).toLowerCase();
-  }
-
-  function hexPad(cp) {
-    const h = cp.toString(16).toLowerCase();
-    if (cp <= 0xffff) return h.padStart(4, "0");
-    return h;
-  }
-
-  function uniqArrays(arrays) {
-    const seen = new Set();
-    const out = [];
-    for (const a of arrays) {
-      const k = a.join(",");
-      if (!a.length) continue;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push(a);
-    }
-    return out;
-  }
-
-  function buildAranjaCandidates(emojiText) {
-    const cps0 = emojiCodepoints(emojiText);
-
-    const variants = uniqArrays([
-      cps0,
-      stripVS(cps0),
-      stripSkin(cps0),
-      stripSkin(stripVS(cps0)),
-      firstChunkBeforeZWJ(cps0),
-      stripVS(firstChunkBeforeZWJ(cps0)),
-      stripSkin(firstChunkBeforeZWJ(cps0)),
-      stripSkin(stripVS(firstChunkBeforeZWJ(cps0))),
-    ]);
-
-    const joins = ["-", "_"];
-    const urls = [];
-
-    for (const cps of variants) {
-      const partsNoPad = cps.map(hexNoPad);
-      const partsPad = cps.map(hexPad);
-
-      for (const sep of joins) {
-        const file1 = partsNoPad.join(sep);
-        const file2 = partsPad.join(sep);
-
-        if (file1) urls.push(`${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/${file1}.png`);
-        if (file2 && file2 !== file1) urls.push(`${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/${file2}.png`);
-      }
-    }
-
-    // de-dupe
-    return Array.from(new Set(urls));
+  function buildAranjaUrl(emojiText) {
+    const codepoints = emojiCodepoints(emojiText);
+    // Remove variation selectors (FE0F, FE0E) for better URL matching
+    const filtered = codepoints.filter(cp => cp !== 0xFE0F && cp !== 0xFE0E);
+    const hex = filtered.map(toHex).join('-');
+    return `${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/64/${hex}.png`;
   }
 
   function wrapEmojiImg(img) {
@@ -290,21 +219,23 @@
   function makeAranjaEmojiBox(emojiText) {
     const img = document.createElement("img");
     img.alt = emojiText;
+    img.className = "emoji-img";
     img.decoding = "async";
     img.loading = "eager";
     img.referrerPolicy = "no-referrer";
     img.crossOrigin = "anonymous";
 
-    const candidates = buildAranjaCandidates(emojiText);
-    let idx = 0;
-
+    const url = buildAranjaUrl(emojiText);
+    
     img.onerror = () => {
-      idx++;
-      if (idx < candidates.length) img.src = candidates[idx];
-      else img.src = ""; // fail closed (still boxed & sized)
+      // Fallback: show the emoji text if image fails
+      const span = document.createElement("span");
+      span.className = "emoji-fallback";
+      span.textContent = emojiText;
+      img.parentNode?.replaceChild(span, img);
     };
 
-    img.src = candidates[0] || "";
+    img.src = url;
     return wrapEmojiImg(img);
   }
 
@@ -317,44 +248,38 @@
     nodes.forEach((node) => {
       const text = node.nodeValue;
       if (!text || !text.trim()) return;
-      if (!hasPictographic(text) && !/[\u200D\uFE0F]/.test(text)) return;
+
+      // Check if text contains any emoji
+      if (!EMOJI_REGEX.test(text)) return;
 
       const frag = document.createDocumentFragment();
-      let changed = false;
-
-      if (graphemes) {
-        for (const { segment } of graphemes.segment(text)) {
-          const isEmojiSeg = hasPictographic(segment) || /[\u200D\uFE0F]/.test(segment);
-          if (isEmojiSeg) {
-            frag.appendChild(makeAranjaEmojiBox(segment));
-            changed = true;
-          } else {
-            frag.appendChild(document.createTextNode(segment));
-          }
+      let lastIndex = 0;
+      let match;
+      
+      // Reset regex
+      EMOJI_REGEX.lastIndex = 0;
+      
+      while ((match = EMOJI_REGEX.exec(text)) !== null) {
+        // Add text before emoji
+        if (match.index > lastIndex) {
+          frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
         }
-      } else {
-        const emojiSeq =
-          /(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?(?:\u200D(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])(?:\uFE0F|\uFE0E)?)*/g;
-
-        let last = 0;
-        let m;
-        while ((m = emojiSeq.exec(text))) {
-          const idx = m.index;
-          if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
-          frag.appendChild(makeAranjaEmojiBox(m[0]));
-          changed = true;
-          last = idx + m[0].length;
-        }
-        if (!changed) return;
-        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        
+        // Add emoji as image
+        frag.appendChild(makeAranjaEmojiBox(match[0]));
+        lastIndex = match.index + match[0].length;
+      }
+      
+      // Add remaining text
+      if (lastIndex < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIndex)));
       }
 
-      if (!changed) return;
       node.parentNode.replaceChild(frag, node);
     });
   }
 
-  // YouTube custom emoji images (<img>) => box them, but DO NOT keep native unicode anywhere
+  // YouTube custom emoji images (<img>) => box them
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
@@ -366,6 +291,7 @@
 
       const img = document.createElement("img");
       img.alt = alt;
+      img.className = "emoji-img";
       img.decoding = "async";
       img.loading = "eager";
       img.referrerPolicy = "no-referrer";
@@ -378,31 +304,34 @@
     });
   }
 
-  // HARD FORCE: square px sizing for ALL emoji boxes so nothing is top-stuck / narrow
+  // Force proper sizing for ALL emoji boxes
   function forceEmojiLayoutPx(container) {
     const line = container.closest(".line") || container;
     const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
 
-    // tuned for OBS / Chromium baseline
-    const sizePx = Math.round(fontPx * 1.15);
-    const boxH = Math.round(fontPx * 1.0);
-    const yShift = Math.round(fontPx * 0.12);
+    // Size emoji to match text height properly
+    const sizePx = Math.round(fontPx * 1.2);
+    const boxH = Math.round(fontPx * 1.2);
+    const yShift = Math.round(-fontPx * 0.15);
 
     const boxes = container.querySelectorAll(".emoji-box");
     boxes.forEach((box) => {
       box.style.setProperty("display", "inline-block", "important");
+      box.style.setProperty("width", `${sizePx}px`, "important");
       box.style.setProperty("height", `${boxH}px`, "important");
       box.style.setProperty("line-height", "1", "important");
-      box.style.setProperty("vertical-align", "baseline", "important");
+      box.style.setProperty("vertical-align", "middle", "important");
       box.style.setProperty("position", "relative", "important");
       box.style.setProperty("top", `${yShift}px`, "important");
+      box.style.setProperty("margin", "0 0.1em", "important");
 
-      const img = box.querySelector("img");
+      const img = box.querySelector("img.emoji-img");
       if (img) {
         img.style.setProperty("width", `${sizePx}px`, "important");
         img.style.setProperty("height", `${sizePx}px`, "important");
         img.style.setProperty("object-fit", "contain", "important");
         img.style.setProperty("display", "block", "important");
+        img.style.setProperty("margin", "0 auto", "important");
       }
     });
   }
