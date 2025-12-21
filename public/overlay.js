@@ -176,163 +176,132 @@
   connect();
 
   // =========================
-  // EMOJI.ARANJA.COM conversion (emoji -> PNG)
+  // EMOJI REPLACEMENT - Using Twemoji CDN (most reliable)
   // =========================
-  const ARANJA_BASE = "https://emoji.aranja.com/static/emoji-data";
-  const ARANJA_STYLE = (params.get("emojiStyle") || "apple").toLowerCase();
-  const ARANJA_STYLE_SAFE = ["apple", "google", "twitter", "facebook"].includes(ARANJA_STYLE)
-    ? ARANJA_STYLE
-    : "apple";
-
-  // Improved emoji detection regex - catches more emoji patterns
-  const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}][\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}]*/gu;
-
-  function emojiCodepoints(emojiText) {
-    const cps = [];
-    for (let i = 0; i < emojiText.length; i++) {
-      const cp = emojiText.codePointAt(i);
-      cps.push(cp);
-      if (cp > 0xffff) i++;
-    }
-    return cps;
-  }
-
-  function toHex(codepoint) {
-    return codepoint.toString(16).toLowerCase();
-  }
-
-  function buildAranjaUrl(emojiText) {
-    const codepoints = emojiCodepoints(emojiText);
-    // Remove variation selectors (FE0F, FE0E) for better URL matching
-    const filtered = codepoints.filter(cp => cp !== 0xFE0F && cp !== 0xFE0E);
-    const hex = filtered.map(toHex).join('-');
-    return `${ARANJA_BASE}/${ARANJA_STYLE_SAFE}/64/${hex}.png`;
-  }
-
-  function wrapEmojiImg(img) {
-    const box = document.createElement("span");
-    box.className = "emoji-box";
-    box.appendChild(img);
-    return box;
-  }
-
-  function makeAranjaEmojiBox(emojiText) {
-    const img = document.createElement("img");
-    img.alt = emojiText;
-    img.className = "emoji-img";
-    img.decoding = "async";
-    img.loading = "eager";
-    img.referrerPolicy = "no-referrer";
-    img.crossOrigin = "anonymous";
-
-    const url = buildAranjaUrl(emojiText);
+  const EMOJI_STYLE = (params.get("emojiStyle") || "twitter").toLowerCase();
+  
+  // Use Twemoji as primary, fall back to emoji.aranja.com
+  function getEmojiImageUrl(codepoints) {
+    const hex = codepoints.map(cp => cp.toString(16)).join('-');
     
-    img.onerror = () => {
-      // Fallback: show the emoji text if image fails
-      const span = document.createElement("span");
-      span.className = "emoji-fallback";
-      span.textContent = emojiText;
-      img.parentNode?.replaceChild(span, img);
-    };
+    if (EMOJI_STYLE === "twitter" || EMOJI_STYLE === "twemoji") {
+      // Twemoji CDN - most reliable
+      return `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${hex}.png`;
+    } else {
+      // emoji.aranja.com for apple, google, facebook
+      const style = ["apple", "google", "facebook"].includes(EMOJI_STYLE) ? EMOJI_STYLE : "apple";
+      return `https://emoji.aranja.com/emojis/${style}/${hex}.png`;
+    }
+  }
 
+  function emojiToCodepoints(emoji) {
+    const codepoints = [];
+    for (let i = 0; i < emoji.length; i++) {
+      const cp = emoji.codePointAt(i);
+      codepoints.push(cp);
+      if (cp > 0xffff) i++; // Skip the next char for surrogate pairs
+    }
+    // Filter out variation selectors
+    return codepoints.filter(cp => cp !== 0xFE0F && cp !== 0xFE0E);
+  }
+
+  function createEmojiImage(emojiChar) {
+    const codepoints = emojiToCodepoints(emojiChar);
+    const url = getEmojiImageUrl(codepoints);
+    
+    const img = document.createElement("img");
     img.src = url;
-    return wrapEmojiImg(img);
+    img.alt = emojiChar;
+    img.className = "emoji-img";
+    img.draggable = false;
+    img.loading = "eager";
+    img.decoding = "async";
+    
+    // If image fails to load, try Twemoji as fallback
+    img.onerror = () => {
+      if (!img.src.includes('twemoji')) {
+        const hex = codepoints.map(cp => cp.toString(16)).join('-');
+        img.src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${hex}.png`;
+      }
+    };
+    
+    return img;
   }
 
   function replaceUnicodeEmoji(container) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
-    const nodes = [];
-    let n;
-    while ((n = walker.nextNode())) nodes.push(n);
+    // Comprehensive emoji regex
+    const emojiRegex = /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(\u200D(\p{Emoji_Presentation}|\p{Emoji}\uFE0F))*/gu;
+    
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
 
-    nodes.forEach((node) => {
-      const text = node.nodeValue;
-      if (!text || !text.trim()) return;
-
-      // Check if text contains any emoji
-      if (!EMOJI_REGEX.test(text)) return;
-
-      const frag = document.createDocumentFragment();
+    textNodes.forEach(textNode => {
+      const text = textNode.nodeValue;
+      if (!text) return;
+      
+      // Test if there are any emojis
+      emojiRegex.lastIndex = 0;
+      if (!emojiRegex.test(text)) return;
+      
+      const fragment = document.createDocumentFragment();
       let lastIndex = 0;
+      
+      emojiRegex.lastIndex = 0;
       let match;
       
-      // Reset regex
-      EMOJI_REGEX.lastIndex = 0;
-      
-      while ((match = EMOJI_REGEX.exec(text)) !== null) {
+      while ((match = emojiRegex.exec(text)) !== null) {
         // Add text before emoji
         if (match.index > lastIndex) {
-          frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+          fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
         }
         
         // Add emoji as image
-        frag.appendChild(makeAranjaEmojiBox(match[0]));
+        fragment.appendChild(createEmojiImage(match[0]));
         lastIndex = match.index + match[0].length;
       }
       
       // Add remaining text
       if (lastIndex < text.length) {
-        frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+        fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
       }
-
-      node.parentNode.replaceChild(frag, node);
+      
+      textNode.parentNode.replaceChild(fragment, textNode);
     });
   }
 
-  // YouTube custom emoji images (<img>) => box them
+  // YouTube custom emoji images (<img>) => ensure proper sizing
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
 
-    candidates.forEach((oldImg) => {
-      const src = oldImg.getAttribute("data-src") || oldImg.getAttribute("src") || "";
-      const alt = oldImg.getAttribute("alt") || oldImg.getAttribute("aria-label") || ":emoji:";
-
-      const img = document.createElement("img");
-      img.alt = alt;
+    candidates.forEach((img) => {
       img.className = "emoji-img";
-      img.decoding = "async";
-      img.loading = "eager";
-      img.referrerPolicy = "no-referrer";
-      img.crossOrigin = "anonymous";
-      img.src = src;
-
-      const boxed = wrapEmojiImg(img);
-      img.onerror = () => boxed.replaceWith(document.createTextNode(alt));
-      oldImg.replaceWith(boxed);
+      img.draggable = false;
     });
   }
 
-  // Force proper sizing for ALL emoji boxes
-  function forceEmojiLayoutPx(container) {
+  // Force proper sizing for ALL emoji images
+  function forceEmojiSize(container) {
     const line = container.closest(".line") || container;
-    const fontPx = parseFloat(getComputedStyle(line).fontSize) || 36;
+    const computedStyle = getComputedStyle(line);
+    const fontPx = parseFloat(computedStyle.fontSize) || 36;
+    
+    // Make emojis slightly larger than text for better visibility
+    const emojiSize = Math.round(fontPx * 1.3);
 
-    // Size emoji to match text height properly
-    const sizePx = Math.round(fontPx * 1.2);
-    const boxH = Math.round(fontPx * 1.2);
-    const yShift = Math.round(-fontPx * 0.15);
-
-    const boxes = container.querySelectorAll(".emoji-box");
-    boxes.forEach((box) => {
-      box.style.setProperty("display", "inline-block", "important");
-      box.style.setProperty("width", `${sizePx}px`, "important");
-      box.style.setProperty("height", `${boxH}px`, "important");
-      box.style.setProperty("line-height", "1", "important");
-      box.style.setProperty("vertical-align", "middle", "important");
-      box.style.setProperty("position", "relative", "important");
-      box.style.setProperty("top", `${yShift}px`, "important");
-      box.style.setProperty("margin", "0 0.1em", "important");
-
-      const img = box.querySelector("img.emoji-img");
-      if (img) {
-        img.style.setProperty("width", `${sizePx}px`, "important");
-        img.style.setProperty("height", `${sizePx}px`, "important");
-        img.style.setProperty("object-fit", "contain", "important");
-        img.style.setProperty("display", "block", "important");
-        img.style.setProperty("margin", "0 auto", "important");
-      }
+    const emojiImages = container.querySelectorAll(".emoji-img");
+    emojiImages.forEach((img) => {
+      img.style.width = `${emojiSize}px`;
+      img.style.height = `${emojiSize}px`;
+      img.style.display = "inline-block";
+      img.style.verticalAlign = "middle";
+      img.style.margin = "0 2px";
+      img.style.objectFit = "contain";
     });
   }
 
@@ -414,9 +383,12 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
+    // First normalize any existing emoji images from YouTube
     normalizeEmojiImages(m);
+    // Then replace all Unicode emojis with images
     replaceUnicodeEmoji(m);
-    forceEmojiLayoutPx(m);
+    // Finally force proper sizing on all emoji images
+    forceEmojiSize(m);
 
     line.appendChild(a);
     line.appendChild(m);
