@@ -23,7 +23,7 @@
       :root {
         --font-size: 36px;
         --max-keep: 600;
-        --enter-ms: 120ms; /* smooth fade */
+        --enter-ms: 120ms;
         --push-ms: 140ms;
       }
 
@@ -46,9 +46,11 @@
 
       .line {
         font-size: var(--font-size);
-        line-height: 1.25;
+        line-height: 1.4;
         font-weight: 900;
         color: #fff;
+        display: flex;
+        align-items: center;
 
         -webkit-text-stroke: 0;
         text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55), 0 10px 24px rgba(0, 0, 0, 0.30);
@@ -69,10 +71,15 @@
         font-weight: 900;
         margin-right: 0.35em;
         white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
       }
 
       .message {
         font-weight: 900;
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
       }
 
       /* Badges */
@@ -83,26 +90,14 @@
         margin-right: 0.18em;
       }
 
-      /* Emoji wrapper - ensures proper sizing and alignment */
-      .emoji-box {
-        display: inline-block;
-        position: relative;
-        line-height: 1;
-        vertical-align: middle;
-      }
-      .emoji-box img {
-        display: block;
-        image-rendering: auto;
+      /* Emoji images - properly sized and aligned */
+      .emoji-img {
+        display: inline-block !important;
+        vertical-align: middle !important;
+        object-fit: contain !important;
+        margin: 0 2px !important;
         image-rendering: -webkit-optimize-contrast;
         image-rendering: crisp-edges;
-      }
-      
-      /* Fallback for failed emoji images */
-      .emoji-fallback {
-        display: inline-block;
-        font-size: 1em;
-        line-height: 1;
-        vertical-align: middle;
       }
 
       /* ===== Hype GIF ===== */
