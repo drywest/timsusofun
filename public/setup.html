@@ -119,7 +119,7 @@
     .sub{
       margin:0 0 1.6rem;
       color:#c7c7cf;
-      max-width:420px;
+      max-width:520px;
       font-size:.96rem;
     }
 
@@ -192,91 +192,19 @@
       font-size:.9rem;
     }
 
-    .field-label{
-      display:block;
-      font-size:.85rem;
-      margin-bottom:.35rem;
-      color:var(--muted);
-    }
-    .field-row{
-      display:flex;
-      flex-wrap:wrap;
-      gap:.6rem;
-      align-items:center;
-      margin-bottom:1rem;
-    }
-    .field-row input{
-      flex:1 1 180px;
-      min-width:0;
-      padding:.65rem .75rem;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,.14);
-      background:rgba(0,0,0,.4);
-      color:var(--text);
-      font:inherit;
-      outline:none;
-      transition:border-color .2s ease, box-shadow .2s ease, background .2s ease;
-    }
-    .field-row input::placeholder{color:rgba(209,213,219,.65);}
-    .field-row input:focus-visible{
-      border-color:var(--brand-2);
-      box-shadow:0 0 0 1px var(--brand-2);
-      background:rgba(15,23,42,.9);
-    }
-
-    #out{
-      display:none;
-      font-size:.9rem;
-      padding:.7rem .85rem;
-      border-radius:10px;
-      background:rgba(15,23,42,.9);
-      border:1px solid rgba(148,163,184,.55);
-      margin-bottom:.75rem;
-      word-break:break-all;
-    }
-    #out a{
-      color:var(--brand-2);
-      text-decoration:none;
-      word-break:break-all;
-    }
-    #out a:hover{text-decoration:underline;}
-
-    .hint{
-      font-size:.8rem;
-      color:var(--muted);
-    }
-
-    /* Preview box */
-    .preview-frame-wrap{
-      margin-top:.5rem;
-      border-radius:16px;
-      background: linear-gradient(180deg,var(--primary-dark-1),var(--primary-dark-2));
-      border:1px solid rgba(15,23,42,.9);
-      overflow:hidden;
-      position:relative;
-      min-height:200px;
-      max-height:200px;
-      display:flex;
-      align-items:stretch;
-      justify-content:stretch;
-    }
-    .preview-frame{
-      width:100%;
-      height:200px;
-      border:0;
-      display:none;
-    }
-    .preview-placeholder{
-      padding:1.2rem 1.4rem;
-      font-size:.9rem;
-      color:var(--muted);
+    /* New: CTA button layout */
+    .cta-wrap{
       display:flex;
       flex-direction:column;
-      gap:.4rem;
-      justify-content:center;
+      gap:.9rem;
+      margin-top:.75rem;
     }
-    .preview-placeholder b{
-      color:var(--text);
+    .cta-btn{
+      width:100%;
+      justify-content:center;
+      padding:1rem 1.1rem;
+      border-radius:14px;
+      font-size:1rem;
     }
 
     /* Clients strip */
@@ -332,66 +260,6 @@
       color:var(--muted);
     }
 
-    /* Antibot modal */
-    .antibot-overlay{
-      position:fixed;
-      inset:0;
-      z-index:80;
-      display:none;
-      align-items:center;
-      justify-content:center;
-    }
-    .antibot-overlay.active{display:flex;}
-    .antibot-backdrop{
-      position:absolute;
-      inset:0;
-      background:rgba(3,7,18,.78);
-      backdrop-filter:blur(8px);
-    }
-    .antibot-dialog{
-      position:relative;
-      z-index:1;
-      max-width:360px;
-      width:90%;
-      border-radius:18px;
-      padding:18px 20px 14px;
-      background:var(--card);
-      border:1px solid rgba(148,163,184,.65);
-      box-shadow:0 18px 45px -24px rgba(0,0,0,.9);
-    }
-    .antibot-dialog h2{
-      margin:0 0 .4rem;
-      font-size:1.05rem;
-      letter-spacing:-.01em;
-    }
-    .antibot-dialog p{
-      margin:0 0 .9rem;
-      font-size:.88rem;
-      color:var(--muted);
-    }
-    .antibot-check{
-      display:flex;
-      align-items:center;
-      gap:.5rem;
-      font-size:.9rem;
-      margin-bottom:1rem;
-      cursor:pointer;
-      user-select:none;
-    }
-    .antibot-check input{
-      width:16px;
-      height:16px;
-      border-radius:4px;
-      border:1px solid rgba(148,163,184,.8);
-      background:rgba(15,23,42,.9);
-      accent-color:var(--brand-2);
-    }
-    .antibot-actions{
-      display:flex;
-      justify-content:flex-end;
-      gap:.5rem;
-    }
-
     footer{border-top:1px solid rgba(255,255,255,.06); background:rgba(0,0,0,.35); padding:28px 0; margin-top:2rem}
     .foot{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:16px}
     .footer-links{justify-self:center; display:flex; gap:1rem; flex-wrap:wrap}
@@ -399,6 +267,31 @@
     .foot a{color:var(--muted); text-decoration:none}
     .foot a:hover{color:var(--text)}
     .footer-copy{justify-self:end; color:var(--muted); font-size:.95rem}
+
+    /* Preview box (kept) */
+    .preview-frame-wrap{
+      margin-top:.5rem;
+      border-radius:16px;
+      background: linear-gradient(180deg,var(--primary-dark-1),var(--primary-dark-2));
+      border:1px solid rgba(15,23,42,.9);
+      overflow:hidden;
+      position:relative;
+      min-height:200px;
+      max-height:200px;
+      display:flex;
+      align-items:stretch;
+      justify-content:stretch;
+    }
+    .preview-placeholder{
+      padding:1.2rem 1.4rem;
+      font-size:.9rem;
+      color:var(--muted);
+      display:flex;
+      flex-direction:column;
+      gap:.4rem;
+      justify-content:center;
+    }
+    .preview-placeholder b{color:var(--text);}
   </style>
 </head>
 <body id="setup">
@@ -427,19 +320,24 @@
       <div class="hero-inner">
         <div class="eyebrow" data-animate data-delay="1"><span class="dot"></span>Stream With Swag</div>
         <h1 class="title" data-animate data-delay="2">Timsu Setup</h1>
-        <p class="sub" data-animate data-delay="3">Enter Your YouTube Channel ID, then add it as a Browser Source in OBS.</p>
+        <p class="sub" data-animate data-delay="3">Click below to get started.</p>
+
         <div class="setup-grid" data-animate data-delay="4">
           <article class="card setup-card">
-            <h2>Create a Link</h2>
-            <div class="field-row">
-              <input id="cid" type="text" placeholder="Enter Channel ID" autocomplete="off" />
-              <button id="gen" type="button" class="btn btn-primary">Generate</button>
-              <button id="copy" type="button" class="btn" disabled>Copy</button>
+            <h2>Get Started</h2>
+            <p class="muted">Continue to checkout to begin.</p>
+
+            <div class="cta-wrap">
+              <button
+                id="getStartedBtn"
+                type="button"
+                class="btn btn-primary cta-btn"
+              >
+                Get Started
+              </button>
             </div>
 
-            <div id="out"></div>
-
-            <!-- Trusted by under generation output -->
+            <!-- Trusted by -->
             <section class="clients-section" aria-label="Clients">
               <div class="clients-label">Trusted by</div>
               <div class="clients-shell" id="clientScroller">
@@ -485,36 +383,18 @@
 
           <article class="card preview-card">
             <h2>Preview</h2>
-            <p class="muted">Preview Your Chat Overlay.</p>
+            <p class="muted">Preview will be available after purchase.</p>
             <div class="preview-frame-wrap">
-              <div class="preview-placeholder" id="previewPlaceholder">
-                <b>No overlay yet</b>
-                <small>Enter your Channel ID and click <em>Generate</em> to preview.</small>
+              <div class="preview-placeholder">
+                <b>No preview yet</b>
+                <small>Click <em>Get Started</em> to continue.</small>
               </div>
-              <iframe id="previewFrame" class="preview-frame" title="Chat preview" src="" loading="lazy"></iframe>
             </div>
           </article>
         </div>
       </div>
     </section>
   </main>
-
-  <!-- Antibot modal -->
-  <div id="antibotOverlay" class="antibot-overlay" aria-hidden="true">
-    <div class="antibot-backdrop"></div>
-    <div class="antibot-dialog" role="dialog" aria-modal="true" aria-labelledby="antibotTitle">
-      <h2 id="antibotTitle">Quick human check</h2>
-      <p>Before we generate your overlay link, please confirm you're not a bot.</p>
-      <label class="antibot-check">
-        <input type="checkbox" id="antibotCheckbox">
-        <span>I'm not a robot</span>
-      </label>
-      <div class="antibot-actions">
-        <button type="button" class="btn" id="antibotCancel">Cancel</button>
-        <button type="button" class="btn btn-primary" id="antibotConfirm" disabled>Continue</button>
-      </div>
-    </div>
-  </div>
 
   <footer role="contentinfo">
     <div class="container foot">
@@ -546,152 +426,12 @@
       });
     });
 
-    const genBtn = document.getElementById("gen");
-    const copyBtn = document.getElementById("copy");
-    const out = document.getElementById("out");
-    const cidInput = document.getElementById("cid");
-    const previewFrame = document.getElementById("previewFrame");
-    const previewPlaceholder = document.getElementById("previewPlaceholder");
-
-    const antibotOverlay = document.getElementById("antibotOverlay");
-    const antibotCheckbox = document.getElementById("antibotCheckbox");
-    const antibotConfirm = document.getElementById("antibotConfirm");
-    const antibotCancel = document.getElementById("antibotCancel");
-
-    let lastUrl = "";
-    let humanVerified = false;
-
-    function setCopyEnabled(enabled) {
-      copyBtn.disabled = !enabled;
-      if (!copyBtn.textContent.trim()) copyBtn.textContent = "Copy";
-    }
-
-    async function copyToClipboard(text) {
-      try {
-        await navigator.clipboard.writeText(text);
-        return true;
-      } catch {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.setAttribute("readonly", "");
-          ta.style.position = "fixed";
-          ta.style.opacity = "0";
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand("copy");
-          document.body.removeChild(ta);
-          return true;
-        } catch {
-          return false;
-        }
-      }
-    }
-
-    function updatePreview(url) {
-      if (!url) {
-        previewFrame.removeAttribute("src");
-        previewFrame.style.display = "none";
-        previewPlaceholder.style.display = "flex";
-        return;
-      }
-      previewFrame.src = url;
-      previewFrame.style.display = "block";
-      previewPlaceholder.style.display = "none";
-    }
-
-    function generate() {
-      const cid = cidInput.value.trim();
-      if (!cid) {
-        out.style.display = "none";
-        setCopyEnabled(false);
-        updatePreview("");
-        return;
-      }
-
-      const base = "https://timsu.fun";
-      lastUrl = `${base}/overlay/${encodeURIComponent(cid)}`;
-
-      out.style.display = "block";
-      out.innerHTML = `<div><b>Overlay URL</b><br><a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a></div>`;
-      setCopyEnabled(true);
-      updatePreview(lastUrl);
-    }
-
-    async function onCopy() {
-      if (!lastUrl) return;
-      const ok = await copyToClipboard(lastUrl);
-      if (ok) {
-        const old = copyBtn.textContent;
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => (copyBtn.textContent = old || "Copy"), 1200);
-      }
-    }
-
-    // Antibot helpers
-    function openAntibot(){
-      antibotOverlay.classList.add("active");
-      antibotOverlay.setAttribute("aria-hidden","false");
-      antibotCheckbox.checked = false;
-      antibotConfirm.disabled = true;
-    }
-    function closeAntibot(){
-      antibotOverlay.classList.remove("active");
-      antibotOverlay.setAttribute("aria-hidden","true");
-    }
-
-    antibotCheckbox.addEventListener("change", () => {
-      antibotConfirm.disabled = !antibotCheckbox.checked;
+    // Get Started -> Stripe
+    const STRIPE_URL = "https://buy.stripe.com/3cIbJ3bno0yW07VcHd3ZK04";
+    const getStartedBtn = document.getElementById("getStartedBtn");
+    getStartedBtn.addEventListener("click", () => {
+      window.location.href = STRIPE_URL;
     });
-
-    antibotCancel.addEventListener("click", () => {
-      closeAntibot();
-    });
-
-    antibotConfirm.addEventListener("click", () => {
-      if (!antibotCheckbox.checked) return;
-      humanVerified = true;
-      closeAntibot();
-      generate();
-    });
-
-    // Close on backdrop click
-    antibotOverlay.addEventListener("click", (e) => {
-      if (e.target === antibotOverlay || e.target.classList.contains("antibot-backdrop")) {
-        closeAntibot();
-      }
-    });
-
-    // Esc to close
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && antibotOverlay.classList.contains("active")) {
-        closeAntibot();
-      }
-    });
-
-    // Hook up buttons
-    genBtn.addEventListener("click", () => {
-      if (!humanVerified) {
-        openAntibot();
-      } else {
-        generate();
-      }
-    });
-
-    copyBtn.addEventListener("click", onCopy);
-
-    cidInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        if (!humanVerified) {
-          openAntibot();
-        } else {
-          generate();
-        }
-      }
-    });
-
-    setCopyEnabled(false);
-    updatePreview("");
 
     // Clients auto-scroll (no hover glare)
     (function(){
