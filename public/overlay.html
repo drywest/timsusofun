@@ -157,8 +157,7 @@
 
     <!-- Payment banner -->
     <div id="payment-banner" role="status" aria-live="polite">
-      Timsu now requires payment. If you haven't purchased visit
-      <a href="https://timsu.fun" target="_blank" rel="noopener noreferrer">https://timsu.fun</a>
+      Starting January 30th Timsu will require a small monthly subscription. No action is needed currently
     </div>
 
     <script>
@@ -166,7 +165,7 @@
       window.addEventListener("load", () => {
         const banner = document.getElementById("payment-banner");
         banner.classList.add("show");
-        setTimeout(() => banner.classList.remove("show"), 5000);
+        setTimeout(() => banner.classList.remove("show"), 8000);
       });
     </script>
 
