@@ -80,7 +80,6 @@
     .btn:hover{transform:translateY(-1px); border-color:rgba(255,255,255,.25)}
     .btn:focus-visible{outline:none; box-shadow:0 0 0 4px var(--ring)}
 
-    /* Highlighted primary buttons */
     .btn-primary{
       border-color: rgba(148,163,184,.7);
       background:
@@ -90,7 +89,6 @@
         0 0 0 1px rgba(15,23,42,.9),
         0 14px 35px -18px rgba(0,0,0,.9);
     }
-    .btn[disabled]{opacity:.6; cursor:not-allowed; box-shadow:none; transform:none;}
 
     main{position:relative}
 
@@ -192,33 +190,23 @@
       font-size:.9rem;
     }
 
-    /* New: CTA button layout */
-    .cta-wrap{
+    /* Stripe embed container – keeps spacing consistent */
+    .stripe-wrap{
+      margin-top:.6rem;
       display:flex;
-      flex-direction:column;
-      gap:.9rem;
-      margin-top:.75rem;
-    }
-    .cta-btn{
-      width:100%;
-      justify-content:center;
-      padding:1rem 1.1rem;
-      border-radius:14px;
-      font-size:1rem;
+      justify-content:flex-start;
+      align-items:center;
+      min-height:56px;
     }
 
     /* Clients strip */
-    .clients-section{
-      margin-top:1.5rem;
-    }
+    .clients-section{margin-top:1.5rem;}
     .clients-label{
       font-size:.85rem;
       color:var(--muted);
       letter-spacing:.08em;
       text-transform:uppercase;
     }
-
-    /* Trusted by box – hover glare removed */
     .clients-shell{
       margin-top:1rem;
       border-radius:18px;
@@ -255,10 +243,7 @@
       flex-shrink:0;
     }
     .client-pill strong{font-weight:600;}
-    .client-pill span{
-      font-size:.8rem;
-      color:var(--muted);
-    }
+    .client-pill span{font-size:.8rem;color:var(--muted);}
 
     footer{border-top:1px solid rgba(255,255,255,.06); background:rgba(0,0,0,.35); padding:28px 0; margin-top:2rem}
     .foot{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:16px}
@@ -268,7 +253,6 @@
     .foot a:hover{color:var(--text)}
     .footer-copy{justify-self:end; color:var(--muted); font-size:.95rem}
 
-    /* Preview box (kept) */
     .preview-frame-wrap{
       margin-top:.5rem;
       border-radius:16px;
@@ -293,6 +277,9 @@
     }
     .preview-placeholder b{color:var(--text);}
   </style>
+
+  <!-- Stripe Buy Button script (per your request) -->
+  <script async src="https://js.stripe.com/v3/buy-button.js"></script>
 </head>
 <body id="setup">
   <div class="bg-wrap">
@@ -320,21 +307,19 @@
       <div class="hero-inner">
         <div class="eyebrow" data-animate data-delay="1"><span class="dot"></span>Stream With Swag</div>
         <h1 class="title" data-animate data-delay="2">Timsu Setup</h1>
-        <p class="sub" data-animate data-delay="3">Click below to get started.</p>
+        <p class="sub" data-animate data-delay="3">Complete checkout to get started.</p>
 
         <div class="setup-grid" data-animate data-delay="4">
           <article class="card setup-card">
-            <h2>Purchase Timsu</h2>
-            <p class="muted">Continue to checkout to begin.</p>
+            <h2>Get Started</h2>
+            <p class="muted">Secure checkout powered by Stripe.</p>
 
-            <div class="cta-wrap">
-              <button
-                id="getStartedBtn"
-                type="button"
-                class="btn btn-primary cta-btn"
+            <div class="stripe-wrap">
+              <stripe-buy-button
+                buy-button-id="buy_btn_1Sk4gLRo45hZCdhGIT5MkMn8"
+                publishable-key="pk_live_51RtbuoRo45hZCdhGGmn9RpH5KcF9N89G98RhW7BjqSlND9G6OR0Iuyl5QVAVjrMabuHPA5029f4v7LxxWQiQ37Fk00lgq7kuf9"
               >
-                Purchase Now
-              </button>
+              </stripe-buy-button>
             </div>
 
             <!-- Trusted by -->
@@ -342,7 +327,6 @@
               <div class="clients-label">Trusted by</div>
               <div class="clients-shell" id="clientScroller">
                 <div class="clients-track">
-                  <!-- First loop -->
                   <div class="client-pill">
                     <img src="kreekcraft.png" alt="KreekCraft logo" loading="lazy">
                     <div><strong>KreekCraft</strong> · <span>15M subscribers</span></div>
@@ -387,7 +371,7 @@
             <div class="preview-frame-wrap">
               <div class="preview-placeholder">
                 <b>No preview yet</b>
-                <small>Click <em>Get Started</em> to continue.</small>
+                <small>Complete checkout to continue.</small>
               </div>
             </div>
           </article>
@@ -426,13 +410,6 @@
       });
     });
 
-    // Get Started -> Stripe
-    const STRIPE_URL = "https://buy.stripe.com/3cIbJ3bno0yW07VcHd3ZK04";
-    const getStartedBtn = document.getElementById("getStartedBtn");
-    getStartedBtn.addEventListener("click", () => {
-      window.location.href = STRIPE_URL;
-    });
-
     // Clients auto-scroll (no hover glare)
     (function(){
       const shell = document.getElementById('clientScroller');
@@ -440,13 +417,14 @@
       const track = shell.querySelector('.clients-track');
       if(!track) return;
 
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       let isHover = false;
       let lastTime = null;
       let scrollPos = 0;
       let loopWidth = 0;
 
       function recalcLoop(){
-        loopWidth = track.scrollWidth / 2; // because content duplicated
+        loopWidth = track.scrollWidth / 2; // duplicated content
       }
       recalcLoop();
       window.addEventListener('resize', recalcLoop);
@@ -460,7 +438,7 @@
         scrollPos = shell.scrollLeft;
       });
 
-      if(reduceMotionSetup) return; // respect reduced motion
+      if(reduceMotion) return;
 
       function step(ts){
         if(lastTime == null) lastTime = ts;
@@ -468,7 +446,7 @@
         lastTime = ts;
 
         if(!isHover){
-          const speed = 0.03; // px/ms ≈ 30px/s
+          const speed = 0.03;
           scrollPos += dt * speed;
           if(loopWidth > 0 && scrollPos >= loopWidth){
             scrollPos -= loopWidth;
@@ -484,4 +462,3 @@
   </script>
 </body>
 </html>
-
