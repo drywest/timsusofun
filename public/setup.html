@@ -279,28 +279,15 @@
   </style>
 
   <!-- Stripe Buy Button script (per your request) -->
-  <script async src="https://js.stripe.com/v3/buy-button.js"></script>
-</head>
-<body id="setup">
-  <div class="bg-wrap">
-    <div class="bg-gradient"></div>
-    <div class="bg-noise"></div>
-  </div>
+<script async
+  src="https://js.stripe.com/v3/buy-button.js">
+</script>
 
-  <header>
-    <div class="container nav">
-      <a class="brand" href="index.html" aria-label="Back to home">
-        <img src="logo.png" alt="timsu logo">
-      </a>
-      <div class="nav-links">
-        <a href="index.html#features">Features</a>
-        <a href="index.html#faq">FAQ</a>
-      </div>
-      <nav class="nav-actions">
-        <a class="btn btn-primary" href="#setup">Get Started</a>
-      </nav>
-    </div>
-  </header>
+<stripe-buy-button
+  buy-button-id="buy_btn_1Sk4gLRo45hZCdhGIT5MkMn8"
+  publishable-key="pk_live_51RtbuoRo45hZCdhGGmn9RpH5KcF9N89G98RhW7BjqSlND9G6OR0Iuyl5QVAVjrMabuHPA5029f4v7LxxWQiQ37Fk00lgq7kuf9"
+>
+</stripe-buy-button>
 
   <main class="container">
     <section class="hero" aria-label="Overlay setup">
@@ -462,3 +449,4 @@
   </script>
 </body>
 </html>
+
