@@ -114,6 +114,37 @@
         max-height: 60%;
         object-fit: contain;
       }
+
+      /* ===== Payment Banner ===== */
+      #payment-banner {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 9999;
+        background: #d40000;
+        color: #fff;
+        padding: 12px 16px;
+        font-weight: 900;
+        font-size: 18px;
+        text-align: center;
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
+        transform: translateY(100%);
+        opacity: 0;
+        transition: transform 200ms ease, opacity 200ms ease;
+        pointer-events: none;
+      }
+
+      #payment-banner.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      #payment-banner a {
+        color: #fff;
+        text-decoration: underline;
+        pointer-events: auto;
+      }
     </style>
   </head>
 
@@ -123,6 +154,21 @@
     <div id="hype">
       <img id="hype-img" alt="hype" />
     </div>
+
+    <!-- Payment banner -->
+    <div id="payment-banner" role="status" aria-live="polite">
+      Timsu now requires payment. If you haven't purchased visit
+      <a href="https://timsu.fun" target="_blank" rel="noopener noreferrer">https://timsu.fun</a>
+    </div>
+
+    <script>
+      // Show banner on load/refresh for 5 seconds
+      window.addEventListener("load", () => {
+        const banner = document.getElementById("payment-banner");
+        banner.classList.add("show");
+        setTimeout(() => banner.classList.remove("show"), 5000);
+      });
+    </script>
 
     <script src="/overlay.js"></script>
   </body>
