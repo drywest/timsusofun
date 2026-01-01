@@ -141,13 +141,14 @@
   // --- WebSocket + frame-batched pushes ---
   const inbox = [];
   let rafPending = false;
+
   function scheduleFlush() {
     if (rafPending) return;
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
       const batch = inbox.splice(0, inbox.length);
-      if (batch.length) pushBatch(batch);
+      if (batch.length) enqueueRender(batch);
     });
   }
 
@@ -180,15 +181,11 @@
   // =========================
   const EMOJI_STYLE = (params.get("emojiStyle") || "twitter").toLowerCase();
 
-  // Use Twemoji as primary, fall back to emoji.aranja.com
   function getEmojiImageUrl(codepoints) {
     const hex = codepoints.map((cp) => cp.toString(16)).join("-");
-
     if (EMOJI_STYLE === "twitter" || EMOJI_STYLE === "twemoji") {
-      // Twemoji CDN - most reliable
       return `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${hex}.png`;
     } else {
-      // emoji.aranja.com for apple, google, facebook
       const style = ["apple", "google", "facebook"].includes(EMOJI_STYLE) ? EMOJI_STYLE : "apple";
       return `https://emoji.aranja.com/emojis/${style}/${hex}.png`;
     }
@@ -199,10 +196,9 @@
     for (let i = 0; i < emoji.length; i++) {
       const cp = emoji.codePointAt(i);
       codepoints.push(cp);
-      if (cp > 0xffff) i++; // Skip the next char for surrogate pairs
+      if (cp > 0xffff) i++;
     }
-    // Filter out variation selectors
-    return codepoints.filter((cp) => cp !== 0xFE0F && cp !== 0xFE0E);
+    return codepoints.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
   }
 
   function createEmojiImage(emojiChar) {
@@ -217,7 +213,6 @@
     img.loading = "eager";
     img.decoding = "async";
 
-    // If image fails to load, try Twemoji as fallback
     img.onerror = () => {
       if (!img.src.includes("twemoji")) {
         const hex = codepoints.map((cp) => cp.toString(16)).join("-");
@@ -229,7 +224,6 @@
   }
 
   function replaceUnicodeEmoji(container) {
-    // Match any emoji character or sequence
     const emojiRegex =
       /[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{1F000}-\u{1F6FF}\u{1F900}-\u{1FAFF}][\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F300}-\u{1FAFF}]*/gu;
 
@@ -267,7 +261,6 @@
     });
   }
 
-  // YouTube custom emoji images (<img>) => ensure proper sizing
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
@@ -279,7 +272,6 @@
     });
   }
 
-  // Force proper sizing for ALL emoji images
   function forceEmojiSize(container) {
     const line = container.closest(".line") || container;
     const computedStyle = getComputedStyle(line);
@@ -297,12 +289,40 @@
     });
   }
 
-  // ===== NO ANIMATIONS + INDIVIDUAL (FAST) APPEND =====
-  function pushBatch(items) {
+  // ==========================================================
+  // FAST + SMOOTH INDIVIDUAL RENDERING (frame-drained queue)
+  // ==========================================================
+  const renderQueue = [];
+  let draining = false;
+
+  // Extremely fast, but prevents big “dump” stutter
+  const FRAME_BUDGET_MS = 10;  // how long we’re allowed to work per frame
+  const MAX_PER_FRAME = 50;    // hard cap (still very fast)
+
+  function enqueueRender(items) {
+    for (const it of items) renderQueue.push(it);
+    if (!draining) {
+      draining = true;
+      requestAnimationFrame(drainRender);
+    }
+  }
+
+  function drainRender() {
+    const t0 = performance.now();
+
+    let processed = 0;
     let nonSystemCount = 0;
 
-    for (const payload of items) {
+    const fragment = document.createDocumentFragment();
+
+    while (
+      renderQueue.length &&
+      processed < MAX_PER_FRAME &&
+      performance.now() - t0 < FRAME_BUDGET_MS
+    ) {
+      const payload = renderQueue.shift();
       const { author, html, type } = payload || {};
+
       if (type !== "system" && isBot(author)) continue;
       if (type !== "system") nonSystemCount++;
 
@@ -315,22 +335,31 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // Force visible even if your CSS uses !important / animation-only visibility
-      line.classList.add("enter"); // keep compatibility if CSS expects this
+      // Ensure visible instantly (no animation required)
+      line.classList.add("enter");
       line.style.setProperty("transition", "none", "important");
       line.style.setProperty("transform", "none", "important");
       line.style.setProperty("opacity", "1", "important");
       line.style.setProperty("visibility", "visible", "important");
 
-      // Append individually (but very fast)
-      stack.appendChild(line);
+      fragment.appendChild(line);
+      processed++;
     }
 
-    if (nonSystemCount > 0) recordMessages(nonSystemCount);
+    if (fragment.childNodes.length) {
+      stack.appendChild(fragment);
+      if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
-    const maxKeep =
-      parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
-    while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
+      const maxKeep =
+        parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
+      while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
+    }
+
+    if (renderQueue.length) {
+      requestAnimationFrame(drainRender);
+    } else {
+      draining = false;
+    }
   }
 
   function buildLine(author, html, isMod, isOwner, isMember, memberBadges) {
