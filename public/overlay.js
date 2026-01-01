@@ -138,17 +138,16 @@
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
 
-  // --- WebSocket + frame-batched pushes ---
+  // --- WebSocket + frame-batched inbox (kept) ---
   const inbox = [];
   let rafPending = false;
-
   function scheduleFlush() {
     if (rafPending) return;
     rafPending = true;
     requestAnimationFrame(() => {
       rafPending = false;
       const batch = inbox.splice(0, inbox.length);
-      if (batch.length) enqueueRender(batch);
+      if (batch.length) enqueueForBurst(batch);
     });
   }
 
@@ -177,9 +176,10 @@
   connect();
 
   // =========================
-  // EMOJI REPLACEMENT - Using Twemoji CDN (most reliable)
+  // EMOJI REPLACEMENT
   // =========================
   const EMOJI_STYLE = (params.get("emojiStyle") || "twitter").toLowerCase();
+  const EMOJI_SIZE_PX = Math.round(fontSize * 1.3);
 
   function getEmojiImageUrl(codepoints) {
     const hex = codepoints.map((cp) => cp.toString(16)).join("-");
@@ -223,7 +223,14 @@
     return img;
   }
 
+  // fast pre-check to avoid TreeWalker on most messages
+  const EMOJI_FAST_CHECK =
+    /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F000}-\u{1F6FF}]/u;
+
   function replaceUnicodeEmoji(container) {
+    const whole = container.textContent || "";
+    if (!whole || !EMOJI_FAST_CHECK.test(whole)) return;
+
     const emojiRegex =
       /[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{1F000}-\u{1F6FF}\u{1F900}-\u{1FAFF}][\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F300}-\u{1FAFF}]*/gu;
 
@@ -244,7 +251,6 @@
 
       emojiRegex.lastIndex = 0;
       let match;
-
       while ((match = emojiRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
           fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
@@ -265,7 +271,6 @@
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
-
     candidates.forEach((img) => {
       img.className = "emoji-img";
       img.draggable = false;
@@ -273,15 +278,10 @@
   }
 
   function forceEmojiSize(container) {
-    const line = container.closest(".line") || container;
-    const computedStyle = getComputedStyle(line);
-    const fontPx = parseFloat(computedStyle.fontSize) || 36;
-    const emojiSize = Math.round(fontPx * 1.3);
-
     const emojiImages = container.querySelectorAll(".emoji-img");
     emojiImages.forEach((img) => {
-      img.style.width = `${emojiSize}px`;
-      img.style.height = `${emojiSize}px`;
+      img.style.width = `${EMOJI_SIZE_PX}px`;
+      img.style.height = `${EMOJI_SIZE_PX}px`;
       img.style.display = "inline-block";
       img.style.verticalAlign = "middle";
       img.style.margin = "0 2px";
@@ -290,30 +290,39 @@
   }
 
   // ==========================================================
-  // FAST + SMOOTH INDIVIDUAL RENDERING (frame-drained queue)
+  // BULK + BURST: buffer briefly, then burst super rapidly
+  // while staying smooth (time-budgeted per frame).
   // ==========================================================
   const renderQueue = [];
-  let draining = false;
+  let burstTimer = null;
+  let bursting = false;
 
-  // Extremely fast, but prevents big “dump” stutter
-  const FRAME_BUDGET_MS = 10;  // how long we’re allowed to work per frame
-  const MAX_PER_FRAME = 50;    // hard cap (still very fast)
+  // Buffer a tiny moment so bursts look clean (and reduces per-message overhead)
+  const BURST_BUFFER_MS = 22;     // lower = more instant, higher = more "grouped"
+  const FRAME_BUDGET_MS = 12;     // work per frame (keeps smoothness)
+  const MAX_PER_FRAME = 140;      // how many messages we can burst per frame (very fast)
 
-  function enqueueRender(items) {
+  function enqueueForBurst(items) {
     for (const it of items) renderQueue.push(it);
-    if (!draining) {
-      draining = true;
-      requestAnimationFrame(drainRender);
+
+    if (!burstTimer) {
+      burstTimer = setTimeout(() => {
+        burstTimer = null;
+        if (!bursting) {
+          bursting = true;
+          requestAnimationFrame(burstFrame);
+        }
+      }, BURST_BUFFER_MS);
     }
   }
 
-  function drainRender() {
+  function burstFrame() {
     const t0 = performance.now();
 
+    const fragment = document.createDocumentFragment();
+    const entered = [];
     let processed = 0;
     let nonSystemCount = 0;
-
-    const fragment = document.createDocumentFragment();
 
     while (
       renderQueue.length &&
@@ -335,19 +344,19 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // Ensure visible instantly (no animation required)
-      line.classList.add("enter");
-      line.style.setProperty("transition", "none", "important");
-      line.style.setProperty("transform", "none", "important");
-      line.style.setProperty("opacity", "1", "important");
-      line.style.setProperty("visibility", "visible", "important");
-
       fragment.appendChild(line);
+      entered.push(line);
       processed++;
     }
 
     if (fragment.childNodes.length) {
       stack.appendChild(fragment);
+
+      // Trigger CSS enter transition cleanly in next frame (smooth, even when bursting)
+      requestAnimationFrame(() => {
+        for (const el of entered) el.classList.add("enter");
+      });
+
       if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
       const maxKeep =
@@ -356,15 +365,15 @@
     }
 
     if (renderQueue.length) {
-      requestAnimationFrame(drainRender);
+      requestAnimationFrame(burstFrame);
     } else {
-      draining = false;
+      bursting = false;
     }
   }
 
   function buildLine(author, html, isMod, isOwner, isMember, memberBadges) {
     const line = document.createElement("div");
-    line.className = "line";
+    line.className = "line"; // starts hidden by your CSS until ".enter" is added
 
     const a = document.createElement("span");
     a.className = "author";
@@ -382,6 +391,7 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
+    // Emoji handling (optimized a bit)
     normalizeEmojiImages(m);
     replaceUnicodeEmoji(m);
     forceEmojiSize(m);
