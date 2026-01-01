@@ -231,6 +231,8 @@
     candidates.forEach((img) => {
       img.className = "emoji-img";
       img.draggable = false;
+      img.removeAttribute('width');
+      img.removeAttribute('height');
       // Remove any existing inline width/height to ensure consistent scaling
       img.style.removeProperty('width');
       img.style.removeProperty('height');
