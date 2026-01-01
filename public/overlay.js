@@ -180,6 +180,7 @@
   // EMOJI REPLACEMENT - Using Twemoji CDN (most reliable)
   // =========================
   const EMOJI_STYLE = (params.get("emojiStyle") || "twitter").toLowerCase();
+  const EMOJI_SIZE_PX = Math.round(fontSize * 1.3); // FIX: consistent emoji size
 
   function getEmojiImageUrl(codepoints) {
     const hex = codepoints.map((cp) => cp.toString(16)).join("-");
@@ -261,6 +262,7 @@
     });
   }
 
+  // FIX: strip hard sizing from YouTube/custom emoji images
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
@@ -269,19 +271,35 @@
     candidates.forEach((img) => {
       img.className = "emoji-img";
       img.draggable = false;
+
+      // remove hard attributes that cause random small/big
+      img.removeAttribute("width");
+      img.removeAttribute("height");
+
+      // clear inline sizing that can override our forced size
+      img.style.width = "";
+      img.style.height = "";
+      img.style.maxWidth = "";
+      img.style.maxHeight = "";
+      img.style.minWidth = "";
+      img.style.minHeight = "";
     });
   }
 
+  // FIX: force identical size for ALL emojis using known fontSize (not DOM computed)
   function forceEmojiSize(container) {
-    const line = container.closest(".line") || container;
-    const computedStyle = getComputedStyle(line);
-    const fontPx = parseFloat(computedStyle.fontSize) || 36;
-    const emojiSize = Math.round(fontPx * 1.3);
-
     const emojiImages = container.querySelectorAll(".emoji-img");
     emojiImages.forEach((img) => {
-      img.style.width = `${emojiSize}px`;
-      img.style.height = `${emojiSize}px`;
+      img.removeAttribute("width");
+      img.removeAttribute("height");
+
+      img.style.width = `${EMOJI_SIZE_PX}px`;
+      img.style.height = `${EMOJI_SIZE_PX}px`;
+      img.style.maxWidth = `${EMOJI_SIZE_PX}px`;
+      img.style.maxHeight = `${EMOJI_SIZE_PX}px`;
+      img.style.minWidth = `${EMOJI_SIZE_PX}px`;
+      img.style.minHeight = `${EMOJI_SIZE_PX}px`;
+
       img.style.display = "inline-block";
       img.style.verticalAlign = "middle";
       img.style.margin = "0 2px";
@@ -296,8 +314,8 @@
   let draining = false;
 
   // Extremely fast, but prevents big “dump” stutter
-  const FRAME_BUDGET_MS = 10;  // how long we’re allowed to work per frame
-  const MAX_PER_FRAME = 50;    // hard cap (still very fast)
+  const FRAME_BUDGET_MS = 10; // how long we’re allowed to work per frame
+  const MAX_PER_FRAME = 50; // hard cap (still very fast)
 
   function enqueueRender(items) {
     for (const it of items) renderQueue.push(it);
@@ -315,11 +333,7 @@
 
     const fragment = document.createDocumentFragment();
 
-    while (
-      renderQueue.length &&
-      processed < MAX_PER_FRAME &&
-      performance.now() - t0 < FRAME_BUDGET_MS
-    ) {
+    while (renderQueue.length && processed < MAX_PER_FRAME && performance.now() - t0 < FRAME_BUDGET_MS) {
       const payload = renderQueue.shift();
       const { author, html, type } = payload || {};
 
