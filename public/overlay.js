@@ -1,22 +1,17 @@
-// public/overlay.js
 (function () {
   const stack = document.getElementById("stack");
-
   // Tuning: ?fs=36&keep=600&hype=<url>&emojiStyle=apple|google|twitter|facebook
   const params = new URLSearchParams(location.search);
   const fontSize = parseInt(params.get("fs") || "36", 10);
   const keepParam = params.get("keep");
   document.documentElement.style.setProperty("--font-size", `${fontSize}px`);
   if (keepParam) document.documentElement.style.setProperty("--max-keep", parseInt(keepParam, 10));
-
   const channelId = decodeURIComponent(location.pathname.split("/").pop());
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   const WS_URL = `${scheme}://${location.host}/ws?channelId=${encodeURIComponent(channelId)}`;
-
   // Owner/Mod badge assets
   const OWNER_IMG = "/public/badges/owner.png";
   const MOD_IMG = "/public/badges/mod.gif";
-
   // ===== Periodic elephant sound (every 15 minutes) =====
   const ELEPHANT_INTERVAL_MS = 15 * 60 * 1000;
   const elephantAudio = new Audio("/elephant.mp3");
@@ -29,13 +24,11 @@
     } catch {}
   }
   setInterval(playElephant, ELEPHANT_INTERVAL_MS);
-
   // ===== Chat speed → hype GIF (with 30 min cooldown) =====
   const HYPE_THRESHOLD = 500;
   const HYPE_DURATION_MS = 8000;
   const HYPE_COOLDOWN_MS = 30 * 60 * 1000;
   const SPEED_WINDOW_MS = 60000;
-
   const hypeEl = document.getElementById("hype");
   const hypeImg = document.getElementById("hype-img");
   const arrivalTimes = [];
@@ -43,7 +36,6 @@
   let hypeVisible = false;
   let lastHypeAt = 0;
   let hypeReady = false;
-
   (function resolveHypeGif() {
     const override = params.get("hype");
     const dirPath = (function () {
@@ -51,7 +43,6 @@
       const idx = p.lastIndexOf("/");
       return idx > 0 ? p.slice(0, idx) : "/";
     })();
-
     const candidates = override
       ? [decodeURIComponent(override)]
       : [
@@ -62,7 +53,6 @@
           `${dirPath.replace(/\/$/, "")}/pepe.gif`,
           `${dirPath.replace(/\/$/, "")}/public/pepe.gif`,
         ];
-
     let i = 0;
     const tryNext = () => {
       if (!hypeImg || i >= candidates.length) return;
@@ -78,7 +68,6 @@
     };
     tryNext();
   })();
-
   function recordMessages(count) {
     const now = Date.now();
     for (let i = 0; i < count; i++) arrivalTimes.push(now);
@@ -86,18 +75,14 @@
     while (arrivalTimes.length && arrivalTimes[0] < cutoff) arrivalTimes.shift();
     if (arrivalTimes.length > HYPE_THRESHOLD) triggerHype(now);
   }
-
   function triggerHype(now) {
     if (!now) now = Date.now();
     if (now - lastHypeAt < HYPE_COOLDOWN_MS) return;
     if (!hypeReady) return;
-
     lastHypeAt = now;
     if (hypeVisible) return;
-
     hypeVisible = true;
     if (hypeEl) hypeEl.classList.add("show");
-
     if (hypeTimer) clearTimeout(hypeTimer);
     hypeTimer = setTimeout(() => {
       hypeVisible = false;
@@ -105,7 +90,6 @@
       hypeTimer = null;
     }, HYPE_DURATION_MS);
   }
-
   // Stable vibrant colors
   const colorCache = new Map();
   const palette = [
@@ -132,16 +116,13 @@
     colorCache.set(name, c);
     return c;
   }
-
   function isBot(name) {
     const n = String(name || "").toLowerCase().replace(/\s+/g, "");
     return n === "nightbot" || n === "streamlabs" || n === "streamelements";
   }
-
   // --- WebSocket + frame-batched pushes ---
   const inbox = [];
   let rafPending = false;
-
   function scheduleFlush() {
     if (rafPending) return;
     rafPending = true;
@@ -151,7 +132,6 @@
       if (batch.length) enqueueRender(batch);
     });
   }
-
   let ws;
   function connect() {
     ws = new WebSocket(WS_URL);
@@ -175,13 +155,10 @@
     };
   }
   connect();
-
   // =========================
   // EMOJI REPLACEMENT - Using Twemoji CDN (most reliable)
   // =========================
   const EMOJI_STYLE = (params.get("emojiStyle") || "twitter").toLowerCase();
-  const EMOJI_SIZE_PX = Math.round(fontSize * 1.3); // FIX: consistent emoji size
-
   function getEmojiImageUrl(codepoints) {
     const hex = codepoints.map((cp) => cp.toString(16)).join("-");
     if (EMOJI_STYLE === "twitter" || EMOJI_STYLE === "twemoji") {
@@ -191,7 +168,6 @@
       return `https://emoji.aranja.com/emojis/${style}/${hex}.png`;
     }
   }
-
   function emojiToCodepoints(emoji) {
     const codepoints = [];
     for (let i = 0; i < emoji.length; i++) {
@@ -201,11 +177,9 @@
     }
     return codepoints.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
   }
-
   function createEmojiImage(emojiChar) {
     const codepoints = emojiToCodepoints(emojiChar);
     const url = getEmojiImageUrl(codepoints);
-
     const img = document.createElement("img");
     img.src = url;
     img.alt = emojiChar;
@@ -213,39 +187,30 @@
     img.draggable = false;
     img.loading = "eager";
     img.decoding = "async";
-
     img.onerror = () => {
       if (!img.src.includes("twemoji")) {
         const hex = codepoints.map((cp) => cp.toString(16)).join("-");
         img.src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/${hex}.png`;
       }
     };
-
     return img;
   }
-
   function replaceUnicodeEmoji(container) {
     const emojiRegex =
       /[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{1F000}-\u{1F6FF}\u{1F900}-\u{1FAFF}][\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F300}-\u{1FAFF}]*/gu;
-
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let node;
     while ((node = walker.nextNode())) textNodes.push(node);
-
     textNodes.forEach((textNode) => {
       const text = textNode.nodeValue;
       if (!text) return;
-
       emojiRegex.lastIndex = 0;
       if (!emojiRegex.test(text)) return;
-
       const fragment = document.createDocumentFragment();
       let lastIndex = 0;
-
       emojiRegex.lastIndex = 0;
       let match;
-
       while ((match = emojiRegex.exec(text)) !== null) {
         if (match.index > lastIndex) {
           fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
@@ -253,70 +218,52 @@
         fragment.appendChild(createEmojiImage(match[0]));
         lastIndex = match.index + match[0].length;
       }
-
       if (lastIndex < text.length) {
         fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
       }
-
       textNode.parentNode.replaceChild(fragment, textNode);
     });
   }
-
-  // FIX: strip hard sizing from YouTube/custom emoji images
   function normalizeEmojiImages(container) {
     const candidates = container.querySelectorAll(
       'img.yt-emoji, img.emoji, img[src*="yt3.ggpht.com"], img[src*="googleusercontent"], img[src*="ggpht"]',
     );
-
     candidates.forEach((img) => {
       img.className = "emoji-img";
       img.draggable = false;
-
-      // remove hard attributes that cause random small/big
-      img.removeAttribute("width");
-      img.removeAttribute("height");
-
-      // clear inline sizing that can override our forced size
-      img.style.width = "";
-      img.style.height = "";
-      img.style.maxWidth = "";
-      img.style.maxHeight = "";
-      img.style.minWidth = "";
-      img.style.minHeight = "";
+      // Remove any existing inline width/height to ensure consistent scaling
+      img.style.removeProperty('width');
+      img.style.removeProperty('height');
     });
   }
-
-  // FIX: force identical size for ALL emojis using known fontSize (not DOM computed)
   function forceEmojiSize(container) {
+    const line = container.closest(".line") || container;
+    // Use root font size for consistency
+    const rootStyle = getComputedStyle(document.documentElement);
+    const fontPx = parseFloat(rootStyle.getPropertyValue("--font-size")) || 36;
+    // Set emoji size to match font size exactly for "same size as the message"
+    const emojiSize = Math.round(fontPx);
+    // Scale margin relative to font size
+    const marginPx = Math.round(fontPx * 0.05);
     const emojiImages = container.querySelectorAll(".emoji-img");
     emojiImages.forEach((img) => {
-      img.removeAttribute("width");
-      img.removeAttribute("height");
-
-      img.style.width = `${EMOJI_SIZE_PX}px`;
-      img.style.height = `${EMOJI_SIZE_PX}px`;
-      img.style.maxWidth = `${EMOJI_SIZE_PX}px`;
-      img.style.maxHeight = `${EMOJI_SIZE_PX}px`;
-      img.style.minWidth = `${EMOJI_SIZE_PX}px`;
-      img.style.minHeight = `${EMOJI_SIZE_PX}px`;
-
+      img.style.width = `${emojiSize}px`;
+      img.style.height = `${emojiSize}px`;
       img.style.display = "inline-block";
-      img.style.verticalAlign = "middle";
-      img.style.margin = "0 2px";
+      // Better alignment for emojis in text
+      img.style.verticalAlign = "-0.125em";
+      img.style.margin = `0 ${marginPx}px`;
       img.style.objectFit = "contain";
     });
   }
-
   // ==========================================================
   // FAST + SMOOTH INDIVIDUAL RENDERING (frame-drained queue)
   // ==========================================================
   const renderQueue = [];
   let draining = false;
-
   // Extremely fast, but prevents big “dump” stutter
   const FRAME_BUDGET_MS = 10; // how long we’re allowed to work per frame
   const MAX_PER_FRAME = 50; // hard cap (still very fast)
-
   function enqueueRender(items) {
     for (const it of items) renderQueue.push(it);
     if (!draining) {
@@ -324,22 +271,20 @@
       requestAnimationFrame(drainRender);
     }
   }
-
   function drainRender() {
     const t0 = performance.now();
-
     let processed = 0;
     let nonSystemCount = 0;
-
     const fragment = document.createDocumentFragment();
-
-    while (renderQueue.length && processed < MAX_PER_FRAME && performance.now() - t0 < FRAME_BUDGET_MS) {
+    while (
+      renderQueue.length &&
+      processed < MAX_PER_FRAME &&
+      performance.now() - t0 < FRAME_BUDGET_MS
+    ) {
       const payload = renderQueue.shift();
       const { author, html, type } = payload || {};
-
       if (type !== "system" && isBot(author)) continue;
       if (type !== "system") nonSystemCount++;
-
       const line = buildLine(
         type === "system" ? "System" : author || "User",
         html || "",
@@ -348,63 +293,50 @@
         !!(payload && payload.isMember),
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
-
       // Ensure visible instantly (no animation required)
       line.classList.add("enter");
       line.style.setProperty("transition", "none", "important");
       line.style.setProperty("transform", "none", "important");
       line.style.setProperty("opacity", "1", "important");
       line.style.setProperty("visibility", "visible", "important");
-
       fragment.appendChild(line);
       processed++;
     }
-
     if (fragment.childNodes.length) {
       stack.appendChild(fragment);
       if (nonSystemCount > 0) recordMessages(nonSystemCount);
-
       const maxKeep =
         parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
       while (stack.children.length > maxKeep) stack.removeChild(stack.firstChild);
     }
-
     if (renderQueue.length) {
       requestAnimationFrame(drainRender);
     } else {
       draining = false;
     }
   }
-
   function buildLine(author, html, isMod, isOwner, isMember, memberBadges) {
     const line = document.createElement("div");
     line.className = "line";
-
     const a = document.createElement("span");
     a.className = "author";
     a.style.color = nameColor(author || "User");
-
     if (isOwner) a.appendChild(makeBadgeImg(OWNER_IMG, "owner"));
     if (isMod) a.appendChild(makeBadgeImg(MOD_IMG, "mod"));
     if (isMember && memberBadges && memberBadges.length) {
       a.appendChild(makeBadgeImg(memberBadges[0], "member"));
     }
-
     a.appendChild(document.createTextNode(`${(author || "User").toUpperCase()}:`));
-
     const m = document.createElement("span");
     m.className = "message";
     m.innerHTML = ` ${html}`;
-
     normalizeEmojiImages(m);
     replaceUnicodeEmoji(m);
     forceEmojiSize(m);
-
     line.appendChild(a);
     line.appendChild(m);
     return line;
   }
-
   function makeBadgeImg(src, alt) {
     const img = document.createElement("img");
     img.alt = alt || "badge";
@@ -419,7 +351,6 @@
     img.src = src;
     return img;
   }
-
   function escapeHtml(s) {
     return String(s).replace(
       /[&<>"']/g,
