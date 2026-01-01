@@ -239,23 +239,14 @@
     });
   }
   function forceEmojiSize(container) {
-    const line = container.closest(".line") || container;
-    // Use root font size for consistency
-    const rootStyle = getComputedStyle(document.documentElement);
-    const fontPx = parseFloat(rootStyle.getPropertyValue("--font-size")) || 36;
-    // Set emoji size to match font size exactly for "same size as the message"
-    const emojiSize = Math.round(fontPx);
-    // Scale margin relative to font size
-    const marginPx = Math.round(fontPx * 0.05);
     const emojiImages = container.querySelectorAll(".emoji-img");
     emojiImages.forEach((img) => {
-      img.style.width = `${emojiSize}px`;
-      img.style.height = `${emojiSize}px`;
+      img.style.width = "auto";
+      img.style.height = "1.2em";
       img.style.display = "inline-block";
-      // Better alignment for emojis in text
-      img.style.verticalAlign = "-0.125em";
-      img.style.margin = `0 ${marginPx}px`;
-      img.style.objectFit = "contain";
+      img.style.verticalAlign = "middle";
+      img.style.margin = "0 0.1em";
+      img.style.removeProperty('object-fit');
     });
   }
   // ==========================================================
