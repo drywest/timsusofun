@@ -325,7 +325,12 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // (animations removed)
+      // NO MESSAGE ANIMATIONS (but keep compatibility with CSS that expects .enter)
+      line.classList.add("enter");
+      line.style.transition = "none";
+      line.style.opacity = "1";
+      line.style.transform = "none";
+
       fragment.appendChild(line);
       newLines.push(line);
     }
@@ -333,7 +338,6 @@
     if (!newLines.length) return;
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
 
-    // No animations: just append directly
     stack.appendChild(fragment);
 
     const maxKeep =
@@ -389,6 +393,16 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m]);
+    return String(s).replace(
+      /[&<>"']/g,
+      (m) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[m],
+    );
   }
 })();
