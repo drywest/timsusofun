@@ -239,14 +239,19 @@
     });
   }
   function forceEmojiSize(container) {
+    const line = container.closest(".line") || container;
+    const computedStyle = getComputedStyle(line);
+    const fontPx = parseFloat(computedStyle.fontSize) || 36;
+    const emojiSize = Math.round(fontPx * 1.2);
+    const marginPx = Math.round(fontPx * 0.05);
     const emojiImages = container.querySelectorAll(".emoji-img");
     emojiImages.forEach((img) => {
-      img.style.width = "auto";
-      img.style.height = "1.2em";
+      img.style.width = `${emojiSize}px`;
+      img.style.height = `${emojiSize}px`;
       img.style.display = "inline-block";
-      img.style.verticalAlign = "middle";
-      img.style.margin = "0 0.1em";
-      img.style.removeProperty('object-fit');
+      img.style.verticalAlign = "bottom";
+      img.style.margin = `0 ${marginPx}px`;
+      img.style.objectFit = "contain";
     });
   }
   // ==========================================================
@@ -328,6 +333,7 @@
     forceEmojiSize(m);
     line.appendChild(a);
     line.appendChild(m);
+    line.style.lineHeight = "1.5";
     return line;
   }
   function makeBadgeImg(src, alt) {
