@@ -202,7 +202,7 @@
       if (cp > 0xffff) i++; // Skip the next char for surrogate pairs
     }
     // Filter out variation selectors
-    return codepoints.filter((cp) => cp !== 0xfe0f && cp !== 0xfe0e);
+    return codepoints.filter((cp) => cp !== 0xFE0F && cp !== 0xFE0E);
   }
 
   function createEmojiImage(emojiChar) {
@@ -236,15 +236,12 @@
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let node;
-    while ((node = walker.nextNode())) {
-      textNodes.push(node);
-    }
+    while ((node = walker.nextNode())) textNodes.push(node);
 
     textNodes.forEach((textNode) => {
       const text = textNode.nodeValue;
       if (!text) return;
 
-      // Test if there are any emojis
       emojiRegex.lastIndex = 0;
       if (!emojiRegex.test(text)) return;
 
@@ -255,17 +252,13 @@
       let match;
 
       while ((match = emojiRegex.exec(text)) !== null) {
-        // Add text before emoji
         if (match.index > lastIndex) {
           fragment.appendChild(document.createTextNode(text.substring(lastIndex, match.index)));
         }
-
-        // Add emoji as image
         fragment.appendChild(createEmojiImage(match[0]));
         lastIndex = match.index + match[0].length;
       }
 
-      // Add remaining text
       if (lastIndex < text.length) {
         fragment.appendChild(document.createTextNode(text.substring(lastIndex)));
       }
@@ -291,8 +284,6 @@
     const line = container.closest(".line") || container;
     const computedStyle = getComputedStyle(line);
     const fontPx = parseFloat(computedStyle.fontSize) || 36;
-
-    // Make emojis slightly larger than text for better visibility
     const emojiSize = Math.round(fontPx * 1.3);
 
     const emojiImages = container.querySelectorAll(".emoji-img");
@@ -306,9 +297,8 @@
     });
   }
 
+  // ===== NO ANIMATIONS + INDIVIDUAL (FAST) APPEND =====
   function pushBatch(items) {
-    const fragment = document.createDocumentFragment();
-    const newLines = [];
     let nonSystemCount = 0;
 
     for (const payload of items) {
@@ -325,20 +315,18 @@
         Array.isArray(payload && payload.member_badges) ? payload.member_badges : [],
       );
 
-      // NO MESSAGE ANIMATIONS (but keep compatibility with CSS that expects .enter)
-      line.classList.add("enter");
-      line.style.transition = "none";
-      line.style.opacity = "1";
-      line.style.transform = "none";
+      // Force visible even if your CSS uses !important / animation-only visibility
+      line.classList.add("enter"); // keep compatibility if CSS expects this
+      line.style.setProperty("transition", "none", "important");
+      line.style.setProperty("transform", "none", "important");
+      line.style.setProperty("opacity", "1", "important");
+      line.style.setProperty("visibility", "visible", "important");
 
-      fragment.appendChild(line);
-      newLines.push(line);
+      // Append individually (but very fast)
+      stack.appendChild(line);
     }
 
-    if (!newLines.length) return;
     if (nonSystemCount > 0) recordMessages(nonSystemCount);
-
-    stack.appendChild(fragment);
 
     const maxKeep =
       parseInt(getComputedStyle(document.documentElement).getPropertyValue("--max-keep")) || 600;
@@ -365,11 +353,8 @@
     m.className = "message";
     m.innerHTML = ` ${html}`;
 
-    // First normalize any existing emoji images from YouTube
     normalizeEmojiImages(m);
-    // Then replace all Unicode emojis with images
     replaceUnicodeEmoji(m);
-    // Finally force proper sizing on all emoji images
     forceEmojiSize(m);
 
     line.appendChild(a);
