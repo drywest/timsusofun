@@ -20,7 +20,7 @@
         overflow: hidden;
 
         /* blast saturation for the whole overlay */
-        filter: saturate(2.8);
+        filter: saturate(1.5);
       }
 
       :root {
@@ -52,23 +52,7 @@
         line-height: 1.25;
         font-weight: 900;
         color: #fff;
-
-        /* NEW: Smooth black "Photoshop-like" outer stroke */
-        -webkit-text-stroke: 6px rgba(0, 0, 0, 0.95);
-        paint-order: stroke fill;
-
-        /* Stroke fallback (multi-shadow ring) + your original depth shadow */
-        text-shadow:
-          /* outer stroke ring (smooth) */
-          -2px -2px 0 rgba(0, 0, 0, 0.95),
-           0px -2px 0 rgba(0, 0, 0, 0.95),
-           2px -2px 0 rgba(0, 0, 0, 0.95),
-          -2px  0px 0 rgba(0, 0, 0, 0.95),
-           2px  0px 0 rgba(0, 0, 0, 0.95),
-          -2px  2px 0 rgba(0, 0, 0, 0.95),
-           0px  2px 0 rgba(0, 0, 0, 0.95),
-           2px  2px 0 rgba(0, 0, 0, 0.95),
-
+        
           /* slight soft edge to make it look less "pixelly" */
           0 0 3px rgba(0, 0, 0, 0.55),
 
