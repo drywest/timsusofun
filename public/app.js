@@ -4,22 +4,21 @@ const liveId = qs.get("liveId") || qs.get("videoId") || "";
 const handle = qs.get("handle") || (channelId.startsWith("@") ? channelId : "");
 
 const chatEl = document.getElementById("chat");
-const maxMessages = Math.max(12, Math.min(260, Number(qs.get("max") || 140)));
+const starCol = document.getElementById("starCol");
 
-const palette = ["#00FF3D", "#00D8FF", "#FF0040", "#B200FF", "#FF10C8", "#FF5500", "#FFD000"];
-const ease = "cubic-bezier(0.22, 1, 0.36, 1)";
+const queue = [];
+let pumping = false;
 
-function hashString(s) {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
-  return h >>> 0;
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (s) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[s]));
 }
-function colorForChannelId(id) {
-  return palette[hashString(id || "unknown") % palette.length];
-}
-function cleanName(name) {
-  return String(name || "Unknown").replace(/^@+/, "");
-}
+
 function isBlockedBot(name) {
   const n = String(name || "").trim().toLowerCase().replace(/\s+/g, "");
   return n === "nightbot" || n === "streamelements";
@@ -39,182 +38,125 @@ function makeBadge(src, cls) {
   img.src = src;
   img.alt = "";
   img.decoding = "async";
+  img.loading = "lazy";
   return img;
 }
 
-function buildMessageEl(chat) {
-  const msg = document.createElement("div");
-  msg.className = "msg";
+function makeName(author) {
+  const span = document.createElement("span");
+  span.className = "name";
+  if (author?.isOwner) span.classList.add("owner");
+  if (author?.isModerator) span.classList.add("mod");
+  span.textContent = author?.name || "";
+  return span;
+}
 
-  const line = document.createElement("div");
-  line.className = "line";
+function makePhoto(url) {
+  const img = document.createElement("img");
+  img.className = "photo";
+  img.src = url || "";
+  img.alt = "";
+  img.decoding = "async";
+  img.loading = "lazy";
+  return img;
+}
 
-  const prefix = document.createElement("span");
-  prefix.className = "prefix";
+function formatMessage(msg) {
+  const span = document.createElement("span");
+  span.className = "msg";
+  span.innerHTML = escapeHtml(msg || "");
+  return span;
+}
 
-  const badges = document.createElement("span");
-  badges.className = "badges";
+function createChatEl(data) {
+  const row = document.createElement("div");
+  row.className = "row";
 
-  const b = chat.badges || {};
+  const left = document.createElement("div");
+  left.className = "left";
+  left.appendChild(makePhoto(data?.author?.photo));
 
-  if (b.isOwner) badges.appendChild(makeBadge("/owner.png"));
-  if (b.isVerified) badges.appendChild(makeBadge("/verified.png"));
-  if (b.isModerator) badges.appendChild(makeBadge("/mod.png"));
+  const right = document.createElement("div");
+  right.className = "right";
 
-  if (b.membership && b.membership.url) {
-    const bi = document.createElement("img");
-    bi.className = "badgeimg memberbadge";
-    bi.referrerPolicy = "no-referrer";
-    bi.src = b.membership.url;
-    bi.alt = b.membership.alt || "";
-    bi.decoding = "async";
-    badges.appendChild(bi);
-  }
+  const meta = document.createElement("div");
+  meta.className = "meta";
 
-  if (badges.children.length) prefix.appendChild(badges);
+  const badgesWrap = document.createElement("span");
+  badgesWrap.className = "badges";
 
-  const name = document.createElement("span");
-  name.className = "name";
-  name.textContent = cleanName(chat.author?.name);
-  name.style.color = colorForChannelId(chat.author?.channelId || "");
-  if (b.isModerator) name.classList.add("mod");
+  const badges = data?.author?.badges || [];
+  for (const b of badges) badgesWrap.appendChild(makeBadge(b));
 
-  const sep = document.createElement("span");
-  sep.className = "sep";
-  sep.textContent = ":";
+  meta.appendChild(badgesWrap);
+  meta.appendChild(makeName(data?.author));
 
-  prefix.appendChild(name);
-  prefix.appendChild(sep);
+  const content = document.createElement("div");
+  content.className = "content";
+  content.appendChild(formatMessage(data?.message));
 
-  const text = document.createElement("span");
-  text.className = "text";
+  right.appendChild(meta);
+  right.appendChild(content);
 
-  const runs = Array.isArray(chat.message) ? chat.message : [];
-  for (const r of runs) {
-    if (r?.type === "text" && typeof r.text === "string") {
-      const t = document.createElement("span");
-      t.textContent = r.text;
-      text.appendChild(t);
-      continue;
-    }
-    if (r?.type === "emoji" && r.url) {
-      const e = document.createElement("img");
-      e.className = "emoji";
-      e.referrerPolicy = "no-referrer";
-      e.src = r.url;
-      e.alt = r.alt || "";
-      e.decoding = "async";
-      text.appendChild(e);
-    }
-  }
+  row.appendChild(left);
+  row.appendChild(right);
 
-  line.appendChild(prefix);
-  line.appendChild(text);
-  msg.appendChild(line);
-  return msg;
+  return row;
 }
 
 function applyIndent(el) {
-  const prefix = el.querySelector(".prefix");
-  const text = el.querySelector(".text");
-  if (!prefix || !text) return;
-  const w = Math.ceil(prefix.getBoundingClientRect().width);
-  text.style.setProperty("--indent", `${w}px`);
+  const nameEl = el.querySelector(".name");
+  const msgEl = el.querySelector(".msg");
+  if (!nameEl || !msgEl) return;
+
+  const nameWidth = Math.ceil(nameEl.getBoundingClientRect().width);
+  msgEl.style.marginLeft = `${nameWidth + 16}px`;
 }
-
-function trimForBatch(batchCount) {
-  const keep = Math.max(0, maxMessages - batchCount);
-  while (chatEl.children.length > keep) chatEl.removeChild(chatEl.firstChild);
-}
-
-function batchSizeForQueue(n) {
-  if (n > 240) return 10;
-  if (n > 160) return 8;
-  if (n > 100) return 6;
-  if (n > 50) return 4;
-  if (n > 18) return 3;
-  if (n > 6) return 2;
-  return 1;
-}
-
-function durForQueue(n) {
-  if (n > 220) return 95;
-  if (n > 140) return 110;
-  if (n > 80) return 125;
-  if (n > 40) return 145;
-  return 165;
-}
-
-const raf = () => new Promise(requestAnimationFrame);
-
-const queue = [];
-let pumping = false;
 
 async function pushUpThenReveal(newEls, movers, beforeTops) {
-  if (movers.length === 0) {
-    for (const el of newEls) el.style.visibility = "visible";
-    return;
-  }
-
-  await raf();
-
-  const dur = durForQueue(queue.length);
-  const anims = [];
+  const afterTops = new Map();
+  for (const el of movers) afterTops.set(el, el.getBoundingClientRect().top);
 
   for (const el of movers) {
-    const before = beforeTops.get(el);
-    if (before == null) continue;
-    const after = el.getBoundingClientRect().top;
-    const dy = before - after;
-    if (!dy) continue;
-
-    if (el._anim) {
-      try { el._anim.cancel(); } catch {}
-      el._anim = null;
-    }
-
-    const anim = el.animate(
-      [{ transform: `translateY(${dy}px)` }, { transform: "translateY(0px)" }],
-      { duration: dur, easing: ease, fill: "both" }
-    );
-    el._anim = anim;
-    anims.push(anim.finished.catch(() => {}));
+    const dy = (beforeTops.get(el) || 0) - (afterTops.get(el) || 0);
+    el.style.transform = `translateY(${dy}px)`;
   }
 
-  await Promise.all(anims);
+  // force reflow
+  void document.body.offsetHeight;
 
   for (const el of movers) {
-    if (el._anim) {
-      try { el._anim.cancel(); } catch {}
-      el._anim = null;
-    }
+    el.style.transition = "transform 260ms ease";
+    el.style.transform = "translateY(0)";
+  }
+
+  for (const el of newEls) el.classList.add("show");
+
+  await new Promise((r) => setTimeout(r, 280));
+
+  for (const el of movers) {
+    el.style.transition = "";
     el.style.transform = "";
   }
-
-  for (const el of newEls) el.style.visibility = "visible";
 }
 
 async function pump() {
   if (pumping) return;
   pumping = true;
 
-  while (queue.length) {
-    const n = batchSizeForQueue(queue.length);
-    trimForBatch(n);
+  while (queue.length > 0) {
+    const batch = queue.splice(0, 6);
 
     const movers = Array.from(chatEl.children);
     const beforeTops = new Map();
-
     for (const el of movers) beforeTops.set(el, el.getBoundingClientRect().top);
 
-    const batchEls = [];
     const frag = document.createDocumentFragment();
-
-    for (let i = 0; i < n && queue.length; i++) {
-      const el = buildMessageEl(queue.shift());
-      el.style.visibility = "hidden";
-      frag.appendChild(el);
+    const batchEls = [];
+    for (const msg of batch) {
+      const el = createChatEl(msg);
       batchEls.push(el);
+      frag.appendChild(el);
     }
 
     chatEl.appendChild(frag);
@@ -239,6 +181,14 @@ function connect() {
   ws.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
+
+    if (msg.type === "error") {
+      const m = msg.data?.message || "Server error";
+      const d = msg.data?.details ? ` (${msg.data.details})` : "";
+      console.error(`[overlay] ${m}${d}`);
+      return;
+    }
+
     if (msg.type === "chat") {
       const author = msg.data?.author?.name || "";
       if (isBlockedBot(author)) return;
