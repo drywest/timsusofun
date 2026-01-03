@@ -13,9 +13,6 @@
 
   <script>
     (function () {
-      // Supports:
-      //   /overlay/<id>
-      //   /overlay/<id>/ (trailing slash ok)
       const m = location.pathname.match(/^\/overlay\/([^\/?#]+)\/?$/);
       if (!m) return;
 
@@ -23,17 +20,10 @@
       if (!id) return;
 
       const qs = new URLSearchParams(location.search);
-
-      // If user already provided params, don't override them.
       const hasAny =
         qs.has("channelId") || qs.has("handle") || qs.has("liveId") || qs.has("videoId");
       if (hasAny) return;
 
-      // Your app.js supports:
-      // - channelId=UC...
-      // - channelId=@handle (it auto-derives handle)
-      // - handle=@handle
-      // We'll set channelId always, and also handle for @ just to be safe.
       qs.set("channelId", id);
       if (id.startsWith("@")) qs.set("handle", id);
 
