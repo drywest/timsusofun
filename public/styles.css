@@ -67,7 +67,7 @@ body::-webkit-scrollbar { width: 0; height: 0; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: 4px;
+  margin-right: 6px;
 }
 
 .badgeimg {
@@ -108,7 +108,7 @@ body::-webkit-scrollbar { width: 0; height: 0; }
 .sep {
   display: inline-block;
   margin-left: 2px;
-  margin-right: 8px;
+  margin-right: 10px;
   color: #FFFFFF;
 }
 
