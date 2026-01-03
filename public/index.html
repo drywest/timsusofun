@@ -80,7 +80,6 @@
     .btn:hover{transform:translateY(-1px); border-color:rgba(255,255,255,.25)}
     .btn:focus-visible{outline:none; box-shadow:0 0 0 4px var(--ring)}
 
-    /* Highlighted primary button */
     .btn-primary{
       border-color: rgba(148,163,184,.7);
       background:
@@ -258,7 +257,6 @@
       smoothWindowScrollTo(top, duration);
     }
 
-    // Features links
     document.querySelectorAll('a[href="#features"]').forEach(a=>{
       a.addEventListener('click', (e)=>{
         e.preventDefault();
@@ -267,7 +265,6 @@
       });
     });
 
-    // FAQ links
     function initFaqObserver(){
       const io = new IntersectionObserver((entries)=>{
         entries.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add('reveal'); io.unobserve(en.target); } });
@@ -285,7 +282,6 @@
       a.addEventListener('click', (e)=>{ e.preventDefault(); revealFaqAndScroll(); });
     });
 
-    // FAQ dropdown toggle
     document.querySelectorAll('.faq-item').forEach(item=>{
       const q = item.querySelector('.faq-q');
       const a = item.querySelector('.faq-a');
@@ -303,7 +299,6 @@
       });
     });
 
-    // Features hover-glide
     const row = document.querySelector('.features-row');
     if(row){
       let targetLeft = 0; let rafId = null; let hovering = false;
@@ -323,7 +318,6 @@
       }
     }
 
-    // Auto-reveal FAQ on scroll
     let userScrollIntent = false, faqAutoShown = false;
     ['wheel','touchmove','keydown'].forEach(evt => {
       window.addEventListener(evt, (e) => {
