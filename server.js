@@ -5,6 +5,21 @@ import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
 
+// Render can run older Node versions unless you pin Node 18+. Polyfill fetch for Node < 18.
+let __fetch = globalThis.fetch;
+if (!__fetch) {
+  try {
+    const mod = await import("node-fetch");
+    __fetch = mod.default;
+  } catch (e) {
+    console.error("Global fetch is not available. Use Node 18+ or install node-fetch.", e);
+  }
+}
+const fetch = (...args) => {
+  if (!__fetch) throw new Error("fetch is not available. Use Node 18+ or install node-fetch.");
+  return __fetch(...args);
+};
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -14,9 +29,10 @@ const app = express();
 const publicDir = path.join(__dirname, "public");
 
 app.use(express.static(publicDir));
-app.get("/", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
-// ✅ added: serve overlay page for /overlay/<channelId>
+app.get("/", (req, res) => res.sendFile(path.join(publicDir, "setup.html")));
+app.get("/setup", (req, res) => res.sendFile(path.join(publicDir, "setup.html")));
+app.get("/overlay", (req, res) => res.sendFile(path.join(publicDir, "overlay.html")));
 app.get("/overlay/:channelId", (req, res) => res.sendFile(path.join(publicDir, "overlay.html")));
 
 const server = http.createServer(app);
@@ -34,12 +50,11 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 function safeJsonParse(s) {
   try {
     return JSON.parse(s);
-  } catch {
-    return null;
-  }
+  } catch {}
+  return null;
 }
 
-function findMatchingBrace(text, startIndex) {
+function findJsonObject(text, startIndex) {
   let depth = 0;
   let inString = false;
   let escape = false;
@@ -57,92 +72,60 @@ function findMatchingBrace(text, startIndex) {
     }
     if (ch === "{") depth++;
     if (ch === "}") depth--;
-    if (depth === 0) return i;
+    if (depth === 0 && i > startIndex) {
+      return text.slice(startIndex, i + 1);
+    }
   }
-  return -1;
-}
-
-function extractJsonObjectAfter(html, marker) {
-  const idx = html.indexOf(marker);
-  if (idx === -1) return null;
-  const braceStart = html.indexOf("{", idx);
-  if (braceStart === -1) return null;
-  const braceEnd = findMatchingBrace(html, braceStart);
-  if (braceEnd === -1) return null;
-  return safeJsonParse(html.slice(braceStart, braceEnd + 1));
+  return null;
 }
 
 function extractYtCfg(html) {
-  const obj = extractJsonObjectAfter(html, "ytcfg.set(");
-  if (obj) return obj;
-  const mKey = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
-  const mVer = html.match(/"INNERTUBE_CONTEXT_CLIENT_VERSION":"([^"]+)"/);
-  const mName = html.match(/"INNERTUBE_CONTEXT_CLIENT_NAME":(\d+)/);
-  const mContext = extractJsonObjectAfter(html, '"INNERTUBE_CONTEXT":');
-  if (!mKey || !mVer || !mName || !mContext) return null;
-  return {
-    INNERTUBE_API_KEY: mKey[1],
-    INNERTUBE_CONTEXT_CLIENT_VERSION: mVer[1],
-    INNERTUBE_CONTEXT_CLIENT_NAME: Number(mName[1]),
-    INNERTUBE_CONTEXT: mContext
-  };
+  const m = html.match(/ytcfg\.set\((\{[\s\S]*?\})\);/);
+  if (m) return safeJsonParse(m[1]);
+
+  const idx = html.indexOf("ytcfg.set(");
+  if (idx !== -1) {
+    const start = html.indexOf("{", idx);
+    if (start !== -1) {
+      const obj = findJsonObject(html, start);
+      if (obj) return safeJsonParse(obj);
+    }
+  }
+  return null;
 }
 
 function extractYtInitialData(html) {
-  const markers = ["var ytInitialData = ", 'window["ytInitialData"] = ', "ytInitialData = "];
-  for (const marker of markers) {
-    const idx = html.indexOf(marker);
-    if (idx === -1) continue;
-    const braceStart = html.indexOf("{", idx);
-    if (braceStart === -1) continue;
-    const braceEnd = findMatchingBrace(html, braceStart);
-    if (braceEnd === -1) continue;
-    const obj = safeJsonParse(html.slice(braceStart, braceEnd + 1));
-    if (obj) return obj;
+  const m = html.match(/var ytInitialData = (\{[\s\S]*?\});/);
+  if (m) return safeJsonParse(m[1]);
+
+  const idx = html.indexOf("ytInitialData");
+  if (idx !== -1) {
+    const start = html.indexOf("{", idx);
+    if (start !== -1) {
+      const obj = findJsonObject(html, start);
+      if (obj) return safeJsonParse(obj);
+    }
   }
   return null;
 }
 
 function extractYtInitialPlayerResponse(html) {
-  const markers = [
-    "var ytInitialPlayerResponse = ",
-    "ytInitialPlayerResponse = ",
-    'window["ytInitialPlayerResponse"] = '
-  ];
-  for (const marker of markers) {
-    const idx = html.indexOf(marker);
-    if (idx === -1) continue;
-    const braceStart = html.indexOf("{", idx);
-    if (braceStart === -1) continue;
-    const braceEnd = findMatchingBrace(html, braceStart);
-    if (braceEnd === -1) continue;
-    const obj = safeJsonParse(html.slice(braceStart, braceEnd + 1));
-    if (obj) return obj;
-  }
-  return null;
-}
+  const m = html.match(/var ytInitialPlayerResponse = (\{[\s\S]*?\});/);
+  if (m) return safeJsonParse(m[1]);
 
-function deepFind(obj, predicate) {
-  const stack = [obj];
-  const seen = new Set();
-  while (stack.length) {
-    const cur = stack.pop();
-    if (!cur || typeof cur !== "object") continue;
-    if (seen.has(cur)) continue;
-    seen.add(cur);
-    if (predicate(cur)) return cur;
-    if (Array.isArray(cur)) {
-      for (let i = cur.length - 1; i >= 0; i--) stack.push(cur[i]);
-    } else {
-      const vals = Object.values(cur);
-      for (let i = vals.length - 1; i >= 0; i--) stack.push(vals[i]);
+  const idx = html.indexOf("ytInitialPlayerResponse");
+  if (idx !== -1) {
+    const start = html.indexOf("{", idx);
+    if (start !== -1) {
+      const obj = findJsonObject(html, start);
+      if (obj) return safeJsonParse(obj);
     }
   }
   return null;
 }
 
 function getContinuationToken(item) {
-  const c1 = item?.continuation?.reloadContinuationData?.continuation;
+  const c1 = item?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token;
   if (typeof c1 === "string" && c1) return c1;
   const c2 = item?.continuationEndpoint?.continuationCommand?.token;
   if (typeof c2 === "string" && c2) return c2;
@@ -161,44 +144,103 @@ function pickLiveChatContinuation(items) {
     if (t) return t;
   }
 
-  const topIdx = lowered.findIndex((x) => x.title.includes("top chat"));
-  if (topIdx !== -1 && lowered.length >= 2) {
-    const other = lowered.find((_, idx) => idx !== topIdx);
-    const t = getContinuationToken(other?.it);
-    if (t) return t;
-  }
-
-  const selectedIdx = items.findIndex((it) => it?.selected === true);
-  if (selectedIdx !== -1 && items.length >= 2) {
-    const other = items.find((_, idx) => idx !== selectedIdx);
-    const t = getContinuationToken(other);
-    if (t) return t;
-  }
-
-  for (let i = items.length - 1; i >= 0; i--) {
-    const t = getContinuationToken(items[i]);
+  for (const it of items) {
+    const t = getContinuationToken(it);
     if (t) return t;
   }
   return null;
 }
 
+function walkFindTabs(obj) {
+  const out = [];
+  const stack = [obj];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+
+    if (Array.isArray(cur)) {
+      for (const v of cur) stack.push(v);
+      continue;
+    }
+
+    if (cur?.tabRenderer) out.push(cur.tabRenderer);
+
+    for (const v of Object.values(cur)) stack.push(v);
+  }
+  return out;
+}
+
+function findWatchContents(initialData) {
+  const contents = initialData?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer;
+  if (contents) return contents;
+
+  const tabs = walkFindTabs(initialData);
+  for (const t of tabs) {
+    const c = t?.content?.liveChatRenderer;
+    if (c) return c;
+  }
+  return null;
+}
+
 function pickInitialContinuation(initialData) {
-  const liveChatRendererObj = deepFind(initialData, (o) => !!o?.liveChatRenderer);
-  const liveChatRenderer = liveChatRendererObj?.liveChatRenderer || initialData?.contents?.liveChatRenderer || null;
-  if (!liveChatRenderer) return null;
+  const chat = findWatchContents(initialData);
+  if (!chat) return null;
 
-  const menu = deepFind(liveChatRenderer, (o) => Array.isArray(o?.sortFilterSubMenuRenderer?.subMenuItems));
-  const items = menu?.sortFilterSubMenuRenderer?.subMenuItems;
-  const contFromMenu = pickLiveChatContinuation(items);
-  if (contFromMenu) return contFromMenu;
+  const conts = chat?.continuations;
+  if (Array.isArray(conts) && conts.length) {
+    for (const c of conts) {
+      const token =
+        c?.reloadContinuationData?.continuation ||
+        c?.invalidationContinuationData?.continuation ||
+        c?.timedContinuationData?.continuation;
+      if (token) return token;
+    }
+  }
 
-  const contA = liveChatRenderer?.continuations?.[0]?.reloadContinuationData?.continuation;
-  if (typeof contA === "string" && contA) return contA;
+  const items = chat?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems;
+  const tok = pickLiveChatContinuation(items);
+  if (tok) return tok;
 
-  const contB = liveChatRenderer?.continuations?.[0]?.timedContinuationData?.continuation;
-  if (typeof contB === "string" && contB) return contB;
+  const actions = chat?.actions;
+  if (Array.isArray(actions)) {
+    for (const a of actions) {
+      const token = a?.addChatItemAction?.item?.liveChatTextMessageRenderer?.contextMenuEndpoint?.continuationCommand
+        ?.token;
+      if (token) return token;
+    }
+  }
 
   return null;
+}
+
+function findValueInTree(obj, predicate) {
+  const stack = [obj];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (predicate(cur)) return cur;
+
+    if (Array.isArray(cur)) {
+      for (const v of cur) stack.push(v);
+    } else {
+      for (const v of Object.values(cur)) stack.push(v);
+    }
+  }
+  return null;
+}
+
+function getLiveChatContinuationFromBrowse(initialData) {
+  const sec = findValueInTree(initialData, (x) => x?.liveChatRenderer);
+  const liveChatRenderer = sec?.liveChatRenderer || initialData?.liveChatRenderer;
+  if (!liveChatRenderer) return null;
+
+  const items = liveChatRenderer?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems;
+  return pickLiveChatContinuation(items);
+}
+
+function pickVideoIdFromHtml(text) {
+  const m = text.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+  return m ? m[1] : null;
 }
 
 function bestThumb(thumbnails) {
@@ -208,105 +250,55 @@ function bestThumb(thumbnails) {
 }
 
 function parseBadges(authorBadges) {
-  const out = { isModerator: false, isVerified: false, isOwner: false, membership: null };
+  const out = { isModerator: false, isOwner: false, isVerified: false, icons: [] };
   if (!Array.isArray(authorBadges)) return out;
 
   for (const b of authorBadges) {
     const r = b?.liveChatAuthorBadgeRenderer;
-    if (!r) continue;
+    const iconType = r?.icon?.iconType;
+    const tooltip = String(r?.tooltip || "").toLowerCase();
 
-    const tooltipRaw = r?.tooltip || r?.accessibility?.accessibilityData?.label || "";
-    const tooltip = String(tooltipRaw).toLowerCase();
-    const iconType = String(r?.icon?.iconType || "").toLowerCase();
-    const thumbUrl = bestThumb(r?.customThumbnail?.thumbnails);
-    const label = tooltipRaw || "";
+    if (iconType === "MODERATOR" || tooltip.includes("moderator")) out.isModerator = true;
+    if (iconType === "OWNER" || tooltip.includes("owner")) out.isOwner = true;
+    if (iconType === "VERIFIED" || tooltip.includes("verified")) out.isVerified = true;
 
-    const isMod = tooltip.includes("moderator") || iconType.includes("moderator") || iconType.includes("mod");
-    const isOwner =
-      tooltip.includes("owner") ||
-      tooltip.includes("channel owner") ||
-      iconType.includes("owner") ||
-      iconType.includes("author");
-    const isVerified =
-      tooltip.includes("verified") ||
-      iconType.includes("verified") ||
-      iconType.includes("check_circle") ||
-      iconType.includes("verified_channel");
-
-    if (isMod) out.isModerator = true;
-    if (isOwner) out.isOwner = true;
-    if (isVerified) out.isVerified = true;
-
-    if (!out.membership && thumbUrl && !isMod && !isOwner && !isVerified) {
-      out.membership = { url: thumbUrl, alt: label || "Member" };
-    }
+    const url = bestThumb(r?.customThumbnail?.thumbnails);
+    if (url) out.icons.push(url);
   }
 
   return out;
 }
 
-function parseRuns(message) {
-  const runs = message?.runs;
-  if (!Array.isArray(runs)) return [];
-  const out = [];
-  for (const r of runs) {
-    if (typeof r?.text === "string") {
-      out.push({ type: "text", text: r.text });
-      continue;
-    }
-    const e = r?.emoji;
-    if (e) {
-      const url = bestThumb(e?.image?.thumbnails) || null;
-      const alt =
-        e?.shortcuts?.[0] ||
-        e?.emojiId ||
-        e?.image?.accessibility?.accessibilityData?.label ||
-        "";
-      out.push({ type: "emoji", url, alt });
-    }
-  }
-  return out;
-}
-
-function parseTextMessageRenderer(r) {
-  const id = r?.id || null;
-  const authorName = r?.authorName?.simpleText || "";
-  const channelId = r?.authorExternalChannelId || "";
-  const badges = parseBadges(r?.authorBadges);
-  const message = parseRuns(r?.message);
-
-  const ts = Number(r?.timestampUsec || 0);
-  const timestamp = ts ? Math.floor(ts / 1000) : nowMs();
-
-  return {
-    kind: "text",
-    id,
-    author: { name: authorName, channelId },
-    badges,
-    message,
-    timestamp
-  };
-}
-
-function extractChatItemFromAction(action) {
-  const add = action?.addChatItemAction;
-  if (add?.item) return add.item;
-
-  const replay = action?.replayChatItemAction?.actions;
-  if (Array.isArray(replay)) {
-    for (const a of replay) {
-      const it = a?.addChatItemAction?.item;
-      if (it) return it;
-    }
-  }
-
-  return null;
+function textRunsToString(runs) {
+  if (!Array.isArray(runs)) return "";
+  return runs.map((r) => r?.text || "").join("");
 }
 
 function parseChatItem(item) {
-  const rText = item?.liveChatTextMessageRenderer;
-  if (rText) return parseTextMessageRenderer(rText);
-  return null;
+  const m = item?.addChatItemAction?.item?.liveChatTextMessageRenderer;
+  if (!m) return null;
+
+  const authorName = m?.authorName?.simpleText || "";
+  const msgText = textRunsToString(m?.message?.runs || []);
+  const ts = Number(m?.timestampUsec || 0);
+  const badges = parseBadges(m?.authorBadges);
+
+  const photo = bestThumb(m?.authorPhoto?.thumbnails) || null;
+  const id = m?.id || null;
+
+  return {
+    id,
+    author: {
+      name: authorName,
+      photo,
+      isModerator: badges.isModerator,
+      isOwner: badges.isOwner,
+      isVerified: badges.isVerified,
+      badges: badges.icons
+    },
+    message: msgText,
+    timestampUsec: ts
+  };
 }
 
 function nextContinuationAndTimeout(data) {
@@ -375,21 +367,7 @@ async function getCandidateFromChannel({ channelId, handle }) {
   const m1 = text.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
   if (m1) return m1[1];
 
-  const m2 = text.match(/\/watch\?v=([a-zA-Z0-9_-]{11})/);
-  if (m2) return m2[1];
-
-  return null;
-}
-
-async function waitForLiveId({ channelId, handle }) {
-  while (true) {
-    const cand = await getCandidateFromChannel({ channelId, handle });
-    if (cand) {
-      const live = await isLiveNow(cand).catch(() => false);
-      if (live) return cand;
-    }
-    await sleep(2500);
-  }
+  return pickVideoIdFromHtml(text);
 }
 
 async function initLiveChat(liveId) {
@@ -408,10 +386,24 @@ async function initLiveChat(liveId) {
   const continuation = pickInitialContinuation(initialData);
   if (!continuation) return { ok: false, reason: "No Live chat continuation found." };
 
-  const clientName = ytcfg.INNERTUBE_CONTEXT_CLIENT_NAME || 1;
-  const clientVersion = ytcfg.INNERTUBE_CONTEXT_CLIENT_VERSION || context?.client?.clientVersion || "";
+  const client = context?.client || {};
+  const clientName = client?.clientName || "WEB";
+  const clientVersion = client?.clientVersion || ytcfg?.INNERTUBE_CLIENT_VERSION || "2.20240201.01.00";
 
   return { ok: true, apiKey, context, continuation, clientName, clientVersion };
+}
+
+async function waitForLiveId({ channelId, handle }) {
+  let backoff = 800;
+  for (;;) {
+    const cand = await getCandidateFromChannel({ channelId, handle }).catch(() => null);
+    if (cand) {
+      const ok = await isLiveNow(cand).catch(() => false);
+      if (ok) return cand;
+    }
+    await sleep(backoff);
+    backoff = Math.min(4000, Math.floor(backoff * 1.2));
+  }
 }
 
 class ChatStream {
@@ -445,11 +437,12 @@ class ChatStream {
   markSeen(id) {
     if (!id) return false;
     if (this.seenIds.has(id)) return true;
+
     this.seenIds.set(id, nowMs());
     if (this.seenIds.size > 7000) {
       const entries = [...this.seenIds.entries()].sort((a, b) => a[1] - b[1]);
-      for (let i = 0; i < 2600; i++) {
-        const k = entries[i]?.[0];
+      for (let i = 0; i < 2000 && i < entries.length; i++) {
+        const [k] = entries[i];
         if (k) this.seenIds.delete(k);
       }
     }
@@ -472,6 +465,7 @@ class ChatStream {
 
     let continuation = init.continuation;
     let backoff = 120;
+    let lastErrSent = 0;
 
     while (!this.stopping && this.clients.size > 0) {
       try {
@@ -496,8 +490,7 @@ class ChatStream {
 
         if (Array.isArray(actions)) {
           for (const a of actions) {
-            const item = extractChatItemFromAction(a);
-            if (!item) continue;
+            const item = a?.addChatItemAction?.item;
             const chat = parseChatItem(item);
             if (!chat) continue;
             if (chat.id && this.markSeen(chat.id)) continue;
@@ -516,7 +509,12 @@ class ChatStream {
 
         backoff = 120;
         await sleep(waitMs);
-      } catch {
+      } catch (err) {
+        const now = nowMs();
+        if (now - lastErrSent > 5000) {
+          lastErrSent = now;
+          this.send("error", { message: "Chat fetch error.", details: err?.message ? String(err.message) : String(err) });
+        }
         await sleep(backoff);
         backoff = Math.min(1500, Math.floor(backoff * 1.25));
       }
@@ -553,8 +551,11 @@ wss.on("connection", async (ws, req) => {
     }
 
     streams.get(liveId).addClient(ws);
-  } catch {
-    ws.send(JSON.stringify({ type: "error", data: { message: "Failed to connect to YouTube chat." } }));
+  } catch (err) {
+    ws.send(JSON.stringify({
+      type: "error",
+      data: { message: "Failed to connect to YouTube chat.", details: err?.message ? String(err.message) : String(err) }
+    }));
     ws.close();
   }
 });
