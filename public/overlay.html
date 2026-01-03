@@ -12,21 +12,37 @@
   </div>
 
   <script>
-    (function(){
-      const m = location.pathname.match(/^\/overlay\/([^\/?#]+)/);
-      if(!m) return;
-      const cid = decodeURIComponent(m[1] || "");
-      if(!cid) return;
+    (function () {
+      // Supports:
+      //   /overlay/<id>
+      //   /overlay/<id>/ (trailing slash ok)
+      const m = location.pathname.match(/^\/overlay\/([^\/?#]+)\/?$/);
+      if (!m) return;
+
+      const id = decodeURIComponent(m[1] || "").trim();
+      if (!id) return;
 
       const qs = new URLSearchParams(location.search);
-      if(!qs.get("channelId")){
-        qs.set("channelId", cid);
-        const u = new URL(location.href);
-        u.search = qs.toString();
-        history.replaceState(null, "", u.toString());
-      }
+
+      // If user already provided params, don't override them.
+      const hasAny =
+        qs.has("channelId") || qs.has("handle") || qs.has("liveId") || qs.has("videoId");
+      if (hasAny) return;
+
+      // Your app.js supports:
+      // - channelId=UC...
+      // - channelId=@handle (it auto-derives handle)
+      // - handle=@handle
+      // We'll set channelId always, and also handle for @ just to be safe.
+      qs.set("channelId", id);
+      if (id.startsWith("@")) qs.set("handle", id);
+
+      const u = new URL(location.href);
+      u.search = qs.toString();
+      history.replaceState(null, "", u.toString());
     })();
   </script>
+
   <script src="/app.js" defer></script>
 </body>
 </html>
