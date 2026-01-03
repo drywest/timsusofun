@@ -1,8 +1,5 @@
 const qs = new URLSearchParams(location.search);
-const pathMatch = location.pathname.match(/^\/overlay\/([^\/?#]+)/);
-const pathChannelId = pathMatch ? decodeURIComponent(pathMatch[1]) : "";
-
-const channelId = qs.get("channelId") || pathChannelId || "";
+const channelId = qs.get("channelId") || "";
 const liveId = qs.get("liveId") || qs.get("videoId") || "";
 const handle = qs.get("handle") || (channelId.startsWith("@") ? channelId : "");
 
@@ -10,7 +7,7 @@ const chatEl = document.getElementById("chat");
 const maxMessages = Math.max(12, Math.min(260, Number(qs.get("max") || 140)));
 
 const palette = ["#00FF3D", "#00D8FF", "#FF0040", "#B200FF", "#FF10C8", "#FF5500", "#FFD000"];
-const ease = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const ease = "cubic-bezier(0.22, 1, 0.36, 1)";
 
 function hashString(s) {
   let h = 5381;
@@ -141,11 +138,11 @@ function batchSizeForQueue(n) {
 }
 
 function durForQueue(n) {
-  if (n > 220) return 130;
-  if (n > 140) return 145;
-  if (n > 80) return 160;
-  if (n > 40) return 180;
-  return 200;
+  if (n > 220) return 95;
+  if (n > 140) return 110;
+  if (n > 80) return 125;
+  if (n > 40) return 145;
+  return 165;
 }
 
 const raf = () => new Promise(requestAnimationFrame);
@@ -207,6 +204,7 @@ async function pump() {
 
     const movers = Array.from(chatEl.children);
     const beforeTops = new Map();
+
     for (const el of movers) beforeTops.set(el, el.getBoundingClientRect().top);
 
     const batchEls = [];
