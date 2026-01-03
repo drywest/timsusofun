@@ -4,6 +4,7 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import { fileURLToPath } from "url";
 import path from "path";
+import { fetch as undiciFetch, Agent } from "undici";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,16 +12,36 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 8787);
 
 const app = express();
+app.set("trust proxy", true);
+
 const publicDir = path.join(__dirname, "public");
 
+// Static files
 app.use(express.static(publicDir));
 app.get("/", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
-// ✅ added: serve overlay page for /overlay/<channelId>
-app.get("/overlay/:channelId", (req, res) => res.sendFile(path.join(publicDir, "overlay.html")));
+// Permanent overlay route: /overlay/<channelIdOrHandle>
+app.get("/overlay/:channelId", (req, res) =>
+  res.sendFile(path.join(publicDir, "overlay.html"))
+);
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
+
+// Keep WS alive behind proxies (Render)
+const PING_MS = 25_000;
+const pingInterval = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      try { ws.terminate(); } catch {}
+      continue;
+    }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, PING_MS);
+
+wss.on("close", () => clearInterval(pingInterval));
 
 const streams = new Map();
 
@@ -31,12 +52,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const nowMs = () => Date.now();
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
-function safeJsonParse(s) {
+// Force IPv4 (helps on some hosts)
+const dispatcher = new Agent({
+  connect: { family: 4, timeout: 30_000 },
+});
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = 25_000) {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+
   try {
-    return JSON.parse(s);
-  } catch {
-    return null;
+    return await undiciFetch(url, {
+      ...opts,
+      dispatcher,
+      signal: ac.signal,
+      redirect: "follow",
+    });
+  } finally {
+    clearTimeout(t);
   }
+}
+
+function safeJsonParse(s) {
+  try { return JSON.parse(s); } catch { return null; }
 }
 
 function findMatchingBrace(text, startIndex) {
@@ -51,10 +89,7 @@ function findMatchingBrace(text, startIndex) {
       else if (ch === '"') inString = false;
       continue;
     }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
+    if (ch === '"') { inString = true; continue; }
     if (ch === "{") depth++;
     if (ch === "}") depth--;
     if (depth === 0) return i;
@@ -84,7 +119,7 @@ function extractYtCfg(html) {
     INNERTUBE_API_KEY: mKey[1],
     INNERTUBE_CONTEXT_CLIENT_VERSION: mVer[1],
     INNERTUBE_CONTEXT_CLIENT_NAME: Number(mName[1]),
-    INNERTUBE_CONTEXT: mContext
+    INNERTUBE_CONTEXT: mContext,
   };
 }
 
@@ -107,7 +142,7 @@ function extractYtInitialPlayerResponse(html) {
   const markers = [
     "var ytInitialPlayerResponse = ",
     "ytInitialPlayerResponse = ",
-    'window["ytInitialPlayerResponse"] = '
+    'window["ytInitialPlayerResponse"] = ',
   ];
   for (const marker of markers) {
     const idx = html.indexOf(marker);
@@ -222,16 +257,8 @@ function parseBadges(authorBadges) {
     const label = tooltipRaw || "";
 
     const isMod = tooltip.includes("moderator") || iconType.includes("moderator") || iconType.includes("mod");
-    const isOwner =
-      tooltip.includes("owner") ||
-      tooltip.includes("channel owner") ||
-      iconType.includes("owner") ||
-      iconType.includes("author");
-    const isVerified =
-      tooltip.includes("verified") ||
-      iconType.includes("verified") ||
-      iconType.includes("check_circle") ||
-      iconType.includes("verified_channel");
+    const isOwner = tooltip.includes("owner") || tooltip.includes("channel owner") || iconType.includes("owner") || iconType.includes("author");
+    const isVerified = tooltip.includes("verified") || iconType.includes("verified") || iconType.includes("check_circle") || iconType.includes("verified_channel");
 
     if (isMod) out.isModerator = true;
     if (isOwner) out.isOwner = true;
@@ -241,7 +268,6 @@ function parseBadges(authorBadges) {
       out.membership = { url: thumbUrl, alt: label || "Member" };
     }
   }
-
   return out;
 }
 
@@ -278,14 +304,7 @@ function parseTextMessageRenderer(r) {
   const ts = Number(r?.timestampUsec || 0);
   const timestamp = ts ? Math.floor(ts / 1000) : nowMs();
 
-  return {
-    kind: "text",
-    id,
-    author: { name: authorName, channelId },
-    badges,
-    message,
-    timestamp
-  };
+  return { kind: "text", id, author: { name: authorName, channelId }, badges, message, timestamp };
 }
 
 function extractChatItemFromAction(action) {
@@ -299,7 +318,6 @@ function extractChatItemFromAction(action) {
       if (it) return it;
     }
   }
-
   return null;
 }
 
@@ -322,19 +340,21 @@ function nextContinuationAndTimeout(data) {
     const reload = c?.reloadContinuationData;
     if (reload?.continuation) return { continuation: reload.continuation, timeoutMs: Number(reload?.timeoutMs || 900) };
   }
-
   return { continuation: null, timeoutMs: 900 };
 }
 
+const commonHeaders = {
+  "User-Agent": UA,
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
+  "Cookie": "CONSENT=YES+; PREF=hl=en&gl=US",
+  "Referer": "https://www.youtube.com/",
+};
+
 async function fetchText(url) {
-  const res = await fetch(url, {
-    redirect: "follow",
-    headers: {
-      "User-Agent": UA,
-      "Accept-Language": "en-US,en;q=0.9",
-      "Cookie": "CONSENT=YES+; PREF=hl=en&gl=US"
-    }
-  });
+  const res = await fetchWithTimeout(url, { headers: commonHeaders }, 25_000);
   const text = await res.text();
   return { url: res.url, status: res.status, text };
 }
@@ -399,19 +419,19 @@ async function initLiveChat(liveId) {
   const ytcfg = extractYtCfg(text);
   const initialData = extractYtInitialData(text);
 
-  if (!ytcfg || !initialData) return { ok: false, reason: "Failed to read YouTube chat data." };
+  if (!ytcfg || !initialData) return { ok: false, reason: "Failed to read YouTube chat data (blocked/changed HTML)." };
 
   const apiKey = ytcfg.INNERTUBE_API_KEY;
   const context = ytcfg.INNERTUBE_CONTEXT || null;
   if (!apiKey || !context) return { ok: false, reason: "Missing InnerTube config." };
 
   const continuation = pickInitialContinuation(initialData);
-  if (!continuation) return { ok: false, reason: "No Live chat continuation found." };
+  if (!continuation) return { ok: false, reason: "No live chat continuation found." };
 
   const clientName = ytcfg.INNERTUBE_CONTEXT_CLIENT_NAME || 1;
   const clientVersion = ytcfg.INNERTUBE_CONTEXT_CLIENT_VERSION || context?.client?.clientVersion || "";
 
-  return { ok: true, apiKey, context, continuation, clientName, clientVersion };
+  return { ok: true, apiKey, context, continuation, clientName, clientVersion, chatUrl };
 }
 
 class ChatStream {
@@ -438,9 +458,7 @@ class ChatStream {
     }
   }
 
-  stop() {
-    this.stopping = true;
-  }
+  stop() { this.stopping = true; }
 
   markSeen(id) {
     if (!id) return false;
@@ -468,25 +486,32 @@ class ChatStream {
       return;
     }
 
-    const apiUrl = `https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key=${encodeURIComponent(init.apiKey)}`;
+    const apiUrl =
+      `https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key=${encodeURIComponent(init.apiKey)}`;
 
     let continuation = init.continuation;
-    let backoff = 120;
+    let backoff = 140;
 
     while (!this.stopping && this.clients.size > 0) {
       try {
-        const res = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "User-Agent": UA,
-            "Accept-Language": "en-US,en;q=0.9",
-            "Cookie": "CONSENT=YES+; PREF=hl=en&gl=US",
-            "Content-Type": "application/json",
-            "x-youtube-client-name": String(init.clientName),
-            "x-youtube-client-version": String(init.clientVersion)
+        const res = await fetchWithTimeout(
+          apiUrl,
+          {
+            method: "POST",
+            headers: {
+              "User-Agent": UA,
+              "Accept-Language": "en-US,en;q=0.9",
+              "Cookie": "CONSENT=YES+; PREF=hl=en&gl=US",
+              "Content-Type": "application/json",
+              "x-youtube-client-name": String(init.clientName),
+              "x-youtube-client-version": String(init.clientVersion),
+              "Origin": "https://www.youtube.com",
+              "Referer": init.chatUrl,
+            },
+            body: JSON.stringify({ context: init.context, continuation }),
           },
-          body: JSON.stringify({ context: init.context, continuation })
-        });
+          25_000
+        );
 
         const json = await res.json().catch(() => null);
         if (!json) throw new Error("Bad response");
@@ -514,11 +539,11 @@ class ChatStream {
         let waitMs = clamp(Math.floor(t * 0.28), 60, 240);
         if (pushed > 0) waitMs = 60;
 
-        backoff = 120;
+        backoff = 140;
         await sleep(waitMs);
       } catch {
         await sleep(backoff);
-        backoff = Math.min(1500, Math.floor(backoff * 1.25));
+        backoff = Math.min(2000, Math.floor(backoff * 1.25));
       }
     }
 
@@ -527,6 +552,9 @@ class ChatStream {
 }
 
 wss.on("connection", async (ws, req) => {
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
+
   const url = new URL(req.url, "http://localhost");
   const channelId = url.searchParams.get("channelId") || "";
   const liveIdIn = url.searchParams.get("liveId") || url.searchParams.get("videoId") || "";
@@ -555,10 +583,10 @@ wss.on("connection", async (ws, req) => {
     streams.get(liveId).addClient(ws);
   } catch {
     ws.send(JSON.stringify({ type: "error", data: { message: "Failed to connect to YouTube chat." } }));
-    ws.close();
+    try { ws.close(); } catch {}
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`http://localhost:${PORT}/`);
+  console.log(`Listening on port ${PORT}`);
 });
