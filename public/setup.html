@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
   <style>
     :root{
       --bg:#0a0a0b;
@@ -80,7 +81,6 @@
     .btn:hover{transform:translateY(-1px); border-color:rgba(255,255,255,.25)}
     .btn:focus-visible{outline:none; box-shadow:0 0 0 4px var(--ring)}
 
-    /* Highlighted primary buttons */
     .btn-primary{
       border-color: rgba(148,163,184,.7);
       background:
@@ -192,12 +192,6 @@
       font-size:.9rem;
     }
 
-    .field-label{
-      display:block;
-      font-size:.85rem;
-      margin-bottom:.35rem;
-      color:var(--muted);
-    }
     .field-row{
       display:flex;
       flex-wrap:wrap;
@@ -241,12 +235,6 @@
     }
     #out a:hover{text-decoration:underline;}
 
-    .hint{
-      font-size:.8rem;
-      color:var(--muted);
-    }
-
-    /* Preview box */
     .preview-frame-wrap{
       margin-top:.5rem;
       border-radius:16px;
@@ -279,7 +267,6 @@
       color:var(--text);
     }
 
-    /* Clients strip */
     .clients-section{
       margin-top:1.5rem;
     }
@@ -289,8 +276,6 @@
       letter-spacing:.08em;
       text-transform:uppercase;
     }
-
-    /* Trusted by box – hover glare removed */
     .clients-shell{
       margin-top:1rem;
       border-radius:18px;
@@ -332,7 +317,6 @@
       color:var(--muted);
     }
 
-    /* Antibot modal */
     .antibot-overlay{
       position:fixed;
       inset:0;
@@ -401,6 +385,7 @@
     .footer-copy{justify-self:end; color:var(--muted); font-size:.95rem}
   </style>
 </head>
+
 <body id="setup">
   <div class="bg-wrap">
     <div class="bg-gradient"></div>
@@ -428,6 +413,7 @@
         <div class="eyebrow" data-animate data-delay="1"><span class="dot"></span>Stream With Swag</div>
         <h1 class="title" data-animate data-delay="2">Timsu Setup</h1>
         <p class="sub" data-animate data-delay="3">Enter Your YouTube Channel ID, then add it as a Browser Source in OBS.</p>
+
         <div class="setup-grid" data-animate data-delay="4">
           <article class="card setup-card">
             <h2>Create a Link</h2>
@@ -439,12 +425,10 @@
 
             <div id="out"></div>
 
-            <!-- Trusted by under generation output -->
             <section class="clients-section" aria-label="Clients">
               <div class="clients-label">Trusted by</div>
               <div class="clients-shell" id="clientScroller">
                 <div class="clients-track">
-                  <!-- First loop -->
                   <div class="client-pill">
                     <img src="kreekcraft.png" alt="KreekCraft logo" loading="lazy">
                     <div><strong>KreekCraft</strong> · <span>15M subscribers</span></div>
@@ -461,7 +445,6 @@
                     <img src="cruzlogo.png" alt="Cruz logo" loading="lazy">
                     <div><strong>Cruz</strong> · <span>1M subscribers</span></div>
                   </div>
-                  <!-- Duplicate loop for seamless scroll -->
                   <div class="client-pill">
                     <img src="kreekcraft.png" alt="KreekCraft logo" loading="lazy">
                     <div><strong>KreekCraft</strong> · <span>15M subscribers</span></div>
@@ -499,7 +482,6 @@
     </section>
   </main>
 
-  <!-- Antibot modal -->
   <div id="antibotOverlay" class="antibot-overlay" aria-hidden="true">
     <div class="antibot-backdrop"></div>
     <div class="antibot-dialog" role="dialog" aria-modal="true" aria-labelledby="antibotTitle">
@@ -532,7 +514,9 @@
     const reduceMotionSetup = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if(reduceMotionSetup){
       document.querySelectorAll('[data-animate]').forEach(el => {
-        el.style.opacity = 1; el.style.transform = 'none'; el.style.animation = 'none';
+        el.style.opacity = 1;
+        el.style.transform = 'none';
+        el.style.animation = 'none';
       });
     }
 
@@ -588,6 +572,7 @@
       }
     }
 
+    // ✅ changed only to make preview show the real overlay URL
     function updatePreview(url) {
       if (!url) {
         previewFrame.removeAttribute("src");
@@ -609,8 +594,9 @@
         return;
       }
 
-      const base = "https://timsu.fun";
-      lastUrl = `${base}/overlay/${encodeURIComponent(cid)}`;
+      // ✅ changed only to output a working overlay link for app.js (query string must include channelId)
+      const base = location.origin;
+      lastUrl = `${base}/overlay/${encodeURIComponent(cid)}?channelId=${encodeURIComponent(cid)}`;
 
       out.style.display = "block";
       out.innerHTML = `<div><b>Overlay URL</b><br><a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a></div>`;
@@ -628,7 +614,6 @@
       }
     }
 
-    // Antibot helpers
     function openAntibot(){
       antibotOverlay.classList.add("active");
       antibotOverlay.setAttribute("aria-hidden","false");
@@ -655,21 +640,18 @@
       generate();
     });
 
-    // Close on backdrop click
     antibotOverlay.addEventListener("click", (e) => {
-      if (e.target === antibotOverlay || e.target.classList.contains("antibot-backdrop")) {
+      if (e.target === antibotOverlay || (e.target && e.target.classList && e.target.classList.contains("antibot-backdrop"))) {
         closeAntibot();
       }
     });
 
-    // Esc to close
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && antibotOverlay.classList.contains("active")) {
         closeAntibot();
       }
     });
 
-    // Hook up buttons
     genBtn.addEventListener("click", () => {
       if (!humanVerified) {
         openAntibot();
@@ -693,7 +675,6 @@
     setCopyEnabled(false);
     updatePreview("");
 
-    // Clients auto-scroll (no hover glare)
     (function(){
       const shell = document.getElementById('clientScroller');
       if(!shell) return;
@@ -706,7 +687,7 @@
       let loopWidth = 0;
 
       function recalcLoop(){
-        loopWidth = track.scrollWidth / 2; // because content duplicated
+        loopWidth = track.scrollWidth / 2;
       }
       recalcLoop();
       window.addEventListener('resize', recalcLoop);
@@ -720,7 +701,7 @@
         scrollPos = shell.scrollLeft;
       });
 
-      if(reduceMotionSetup) return; // respect reduced motion
+      if(reduceMotionSetup) return;
 
       function step(ts){
         if(lastTime == null) lastTime = ts;
@@ -728,7 +709,7 @@
         lastTime = ts;
 
         if(!isHover){
-          const speed = 0.03; // px/ms ≈ 30px/s
+          const speed = 0.03;
           scrollPos += dt * speed;
           if(loopWidth > 0 && scrollPos >= loopWidth){
             scrollPos -= loopWidth;
