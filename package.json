@@ -1,13 +1,9 @@
-{
-  "name": "yt-chat-overlay",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2",
-    "ws": "^8.18.0"
-  }
-}
+@@ -9,5 +9,8 @@
+   "dependencies": {
+     "express": "^4.19.2",
+     "ws": "^8.18.0"
++  },
++  "engines": {
++    "node": ">=18"
+   }
+ }
