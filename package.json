@@ -1,15 +1,13 @@
 {
-  "name": "yt-live-chat-overlay",
+  "name": "yt-chat-overlay",
   "version": "1.0.0",
-  "description": "Permanent OBS overlay for YouTube Live chat (ALL messages) powered by YouTube.js",
+  "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.19.2",
-    "ws": "^8.18.0",
-    "youtubei.js": "^15.1.1"
+    "ws": "^8.18.0"
   }
 }
