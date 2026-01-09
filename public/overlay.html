@@ -1,38 +1,300 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Overlay</title>
-  <link rel="stylesheet" href="/styles.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Chat Overlay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            background: transparent !important;
+            color: white;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #chatContainer {
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        
+        .message {
+            display: flex;
+            align-items: flex-start;
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform-origin: left bottom;
+            line-height: 1.4;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.3);
+            margin-bottom: 4px;
+            will-change: transform, opacity;
+        }
+        
+        .badges {
+            display: flex;
+            align-items: center;
+            margin-right: 6px;
+            height: 20px;
+        }
+        
+        .badge {
+            width: 18px;
+            height: 18px;
+            margin-right: 4px;
+            object-fit: contain;
+            filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.5));
+        }
+        
+        .username {
+            font-weight: bold;
+            margin-right: 8px;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        
+        .message-content {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2px;
+        }
+        
+        .emoji {
+            width: 24px;
+            height: 24px;
+            margin: 0 2px;
+            vertical-align: middle;
+            object-fit: contain;
+        }
+        
+        .separator {
+            margin: 0 8px;
+            opacity: 0.7;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+        
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+        }
+        
+        /* Smooth 60fps animations */
+        .message {
+            animation-duration: 0.3s;
+            animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation-fill-mode: both;
+        }
+    </style>
 </head>
 <body>
-  <div id="root">
-    <div id="chat"></div>
-  </div>
-
-  <script>
-    (function () {
-      const m = location.pathname.match(/^\/overlay\/([^\/?#]+)\/?$/);
-      if (!m) return;
-
-      const id = decodeURIComponent(m[1] || "").trim();
-      if (!id) return;
-
-      const qs = new URLSearchParams(location.search);
-      const hasAny =
-        qs.has("channelId") || qs.has("handle") || qs.has("liveId") || qs.has("videoId");
-      if (hasAny) return;
-
-      qs.set("channelId", id);
-      if (id.startsWith("@")) qs.set("handle", id);
-
-      const u = new URL(location.href);
-      u.search = qs.toString();
-      history.replaceState(null, "", u.toString());
-    })();
-  </script>
-
-  <script src="/app.js" defer></script>
+    <div id="chatContainer"></div>
+    
+    <script>
+        // Get overlay ID from URL
+        const pathSegments = window.location.pathname.split('/');
+        const overlayId = pathSegments[pathSegments.length - 1];
+        const urlParams = new URLSearchParams(window.location.search);
+        const channelId = urlParams.get('channelId');
+        
+        // Badge images mapping
+        const badgeImages = {
+            member: 'https://www.gstatic.com/youtube/img/originals/yt_member_badge_16.png',
+            verified: 'https://www.gstatic.com/youtube/img/originals/yt_verified_badge_16.png',
+            moderator: 'https://www.gstatic.com/youtube/img/originals/yt_moderator_badge_16.png',
+            owner: 'https://www.gstatic.com/youtube/img/originals/yt_owner_badge_16.png'
+        };
+        
+        // Generate consistent vibrant color from username
+        function getUsernameColor(username) {
+            const vibrantColors = [
+                '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF',
+                '#00FFFF', '#FF4500', '#FF1493', '#00FF7F', '#1E90FF',
+                '#FFD700', '#FF69B4', '#00CED1', '#7CFC00', '#FF6347'
+            ];
+            let hash = 0;
+            for (let i = 0; i < username.length; i++) {
+                hash = username.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return vibrantColors[Math.abs(hash) % vibrantColors.length];
+        }
+        
+        // Create message element
+        function createMessageElement(chatData) {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'message';
+            
+            // Create badges container
+            const badgesEl = document.createElement('div');
+            badgesEl.className = 'badges';
+            
+            // Add badges in correct order
+            if (chatData.author.badges.isOwner) {
+                badgesEl.appendChild(createBadge('owner', 'Stream Owner'));
+            }
+            if (chatData.author.badges.isVerified) {
+                badgesEl.appendChild(createBadge('verified', 'Verified'));
+            }
+            if (chatData.author.badges.isModerator) {
+                badgesEl.appendChild(createBadge('moderator', 'Moderator'));
+            }
+            if (chatData.author.badges.isMembership) {
+                badgesEl.appendChild(createBadge('member', 'Member'));
+            }
+            if (chatData.author.badges.customBadge) {
+                badgesEl.appendChild(createCustomBadge(chatData.author.badges.customBadge));
+            }
+            
+            // Create username with color
+            const usernameEl = document.createElement('span');
+            usernameEl.className = 'username';
+            usernameEl.textContent = chatData.author.name;
+            usernameEl.style.color = chatData.author.color;
+            
+            // Create separator
+            const separatorEl = document.createElement('span');
+            separatorEl.className = 'separator';
+            separatorEl.textContent = ':';
+            
+            // Create message content
+            const contentEl = document.createElement('div');
+            contentEl.className = 'message-content';
+            
+            chatData.message.forEach(item => {
+                if (item.type === 'text') {
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = item.content;
+                    contentEl.appendChild(textSpan);
+                } else if (item.type === 'emoji') {
+                    const emojiImg = document.createElement('img');
+                    emojiImg.className = 'emoji';
+                    emojiImg.src = item.url;
+                    emojiImg.alt = item.alt;
+                    emojiImg.title = item.alt;
+                    contentEl.appendChild(emojiImg);
+                }
+            });
+            
+            // Assemble message
+            messageEl.appendChild(badgesEl);
+            messageEl.appendChild(usernameEl);
+            messageEl.appendChild(separatorEl);
+            messageEl.appendChild(contentEl);
+            
+            return messageEl;
+        }
+        
+        // Create badge element
+        function createBadge(type, altText) {
+            const img = document.createElement('img');
+            img.className = 'badge';
+            img.src = badgeImages[type];
+            img.alt = altText;
+            img.title = altText;
+            return img;
+        }
+        
+        // Create custom badge element
+        function createCustomBadge(badgeData) {
+            const img = document.createElement('img');
+            img.className = 'badge';
+            img.src = badgeData.thumbnail.url;
+            img.alt = badgeData.label;
+            img.title = badgeData.label;
+            return img;
+        }
+        
+        // Add message to chat
+        function addMessage(chatData) {
+            const container = document.getElementById('chatContainer');
+            const messageEl = createMessageElement(chatData);
+            
+            container.appendChild(messageEl);
+            
+            // Limit number of messages to prevent performance issues
+            const maxMessages = 50;
+            if (container.children.length > maxMessages) {
+                container.removeChild(container.children[0]);
+            }
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
+            
+            // Remove message after 30 seconds
+            setTimeout(() => {
+                if (messageEl.parentNode === container) {
+                    messageEl.style.animation = 'fadeOut 0.5s forwards';
+                    setTimeout(() => {
+                        if (messageEl.parentNode === container) {
+                            container.removeChild(messageEl);
+                        }
+                    }, 500);
+                }
+            }, 30000);
+        }
+        
+        // Connect to SSE stream
+        function connectToChat() {
+            const eventSource = new EventSource(`/stream/${overlayId}`);
+            
+            eventSource.onmessage = (event) => {
+                try {
+                    const chatData = JSON.parse(event.data);
+                    requestAnimationFrame(() => {
+                        addMessage(chatData);
+                    });
+                } catch (error) {
+                    console.error('Error parsing chat data:', error);
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                console.error('EventSource error:', error);
+                eventSource.close();
+                
+                // Reconnect after 5 seconds
+                setTimeout(connectToChat, 5000);
+            };
+            
+            return eventSource;
+        }
+        
+        // Start chat connection
+        let chatConnection = connectToChat();
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (chatConnection) {
+                chatConnection.close();
+            }
+        });
+    </script>
 </body>
 </html>
